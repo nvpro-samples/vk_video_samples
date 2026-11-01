@@ -3520,23 +3520,11 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     }
 
-    // The required num of DPB images.
-    // Defense-in-depth cap. At H.264 Level >= 5.0 the legacy level-max
-    // sizing in InitDpbCount() returned 17 Vulkan slots (16 refs + 1 setup;
-    // the driver's maxDpbSlots=17 / maxActiveReferencePictures=16
-    // advertisement is spec-correct). A 17 here breaks the H.264
-    // DPB manager's eviction accounting (VkEncDpbH264::IsDpbFull counts 16
-    // entries against a threshold of 17 -> eviction never runs -> the
-    // reference set freezes -> progressive drift). The root fixes are the
-    // DpbSequenceStart() clamp and need-based InitDpbCount() sizing; this
-    // cap remains as defense-in-depth for any config path that still yields
-    // >16, and additionally keeps clear of a driver slot-index-16
-    // limitation: the driver hangs the encode engine (fence waits time out
-    // with VK_ERROR_DEVICE_LOST) when a reference is bound at DPB slot
-    // index 16. The cap is defense-in-depth on top of the DpbSequenceStart()
-    // clamp, so that binding is never exercised by this encoder.
-    // The device's maxDpbSlots bounds the count too. The session, the codec's DPB manager and the
-    // parameter sets, which size the DPB from dpbCount, all take this one count, so the DPB manager
+    // The required num of DPB images: at most 16 slots. A reference bound at DPB slot index 16 hangs
+    // the encode ASIC of some implementations (fence waits time out with VK_ERROR_DEVICE_LOST), so
+    // this encoder never binds that slot.
+    // The device's maxDpbSlots bounds the count too. The session, the codec's DPB context and the
+    // parameter sets, which size the DPB from dpbCount, all take this one count, so the DPB context
     // hands out no slot the session lacks.
     m_maxDpbPicturesCount = std::min<uint32_t>(
         {static_cast<uint32_t>(encoderConfig->InitDpbCount()), 16u, encoderConfig->videoCapabilities.maxDpbSlots});
@@ -6169,9 +6157,13 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     assert((encodeFrameInfo->encodeInfo.referenceSlotCount) <= ARRAYSIZE(encodeFrameInfo->dpbImageResources));
     // TODO: Calculate the number of DPB slots for begin against the multiple frames.
-    encodeBeginInfo.referenceSlotCount = encodeFrameInfo->encodeInfo.referenceSlotCount + 1;
-
-    encodeBeginInfo.pReferenceSlots = encodeFrameInfo->referenceSlotsInfo;
+    if (encodeFrameInfo->pBeginCodingReferenceSlots != nullptr) {
+        encodeBeginInfo.referenceSlotCount = encodeFrameInfo->beginCodingReferenceSlotCount;
+        encodeBeginInfo.pReferenceSlots = encodeFrameInfo->pBeginCodingReferenceSlots;
+    } else {
+        encodeBeginInfo.referenceSlotCount = encodeFrameInfo->encodeInfo.referenceSlotCount + 1;
+        encodeBeginInfo.pReferenceSlots = encodeFrameInfo->referenceSlotsInfo;
+    }
 
     const VulkanDeviceContext* vkDevCtx = encodeCmdBuffer->GetDeviceContext();
 

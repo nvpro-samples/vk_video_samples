@@ -20,11 +20,10 @@
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoEncoder/VkVideoEncoderStateH265.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
-#include "VkVideoEncoder/VkEncoderDpbH265.h"
+#include "VkVideoEncoder/VkEncoderDpbPictures.h"
 
 class VkVideoEncoderH265 : public VkVideoEncoder {
 
-    enum { MAX_REFFERENCES = 16 };
     enum { MAX_NUM_SLICES  = 64 };
 
     struct VkVideoEncodeFrameInfoH265 : public VkVideoEncodeFrameInfo {
@@ -35,11 +34,10 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
         VkVideoEncodeH265RateControlInfoKHR      rateControlInfoH265;
         VkVideoEncodeH265RateControlLayerInfoKHR rateControlLayersInfoH265[1];
         StdVideoEncodeH265SliceSegmentHeader     stdSliceSegmentHeader[MAX_NUM_SLICES];
-        StdVideoEncodeH265ReferenceListsInfo     stdReferenceListsInfo;
-        StdVideoH265ShortTermRefPicSet           stdShortTermRefPicSet;
-        StdVideoEncodeH265LongTermRefPics        stdLongTermRefPics;
-        StdVideoEncodeH265ReferenceInfo          stdReferenceInfo[MAX_REFFERENCES];
-        VkVideoEncodeH265DpbSlotInfoKHR          stdDpbSlotInfo[MAX_REFFERENCES];
+        // What the DPB library writes for the picture: the reference syntax stdPictureInfo points to,
+        // and the slots the video commands bind.
+        vvs::dpb::H265EncodeSyntax               dpbSyntax;
+        vvs::dpb::PictureResult                  dpbResult;
 
         VkVideoEncodeFrameInfoH265()
           : VkVideoEncodeFrameInfo(&pictureInfo, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)
@@ -49,11 +47,8 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
           , rateControlInfoH265{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR }
           , rateControlLayersInfoH265{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR }}
           , stdSliceSegmentHeader{}
-          , stdReferenceListsInfo()
-          , stdShortTermRefPicSet()
-          , stdLongTermRefPics()
-          , stdReferenceInfo{}
-          , stdDpbSlotInfo{}
+          , dpbSyntax()
+          , dpbResult()
         {
             pictureInfo.naluSliceSegmentEntryCount = 1;
             pictureInfo.pNaluSliceSegmentEntries = naluSliceSegmentInfo;
@@ -66,13 +61,6 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
                 sliceInfo.pNext = nullptr;
                 sliceInfo.pStdSliceSegmentHeader = &stdSliceSegmentHeader[i];
             }
-
-            stdPictureInfo.pRefLists           = &stdReferenceListsInfo;
-            stdPictureInfo.pShortTermRefPicSet = &stdShortTermRefPicSet;
-            stdPictureInfo.pLongTermRefPics    = &stdLongTermRefPics;
-
-            stdDpbSlotInfo->sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR;
-            stdDpbSlotInfo->pStdReferenceInfo = stdReferenceInfo;
         };
 
         virtual void Reset(bool releaseResources = true) {
@@ -90,11 +78,7 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
             assert(rateControlInfoH265.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR);
             assert(rateControlLayersInfoH265[0].sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR);
             // stdSliceSegmentHeader()
-            // stdReferenceListsInfo()
-            // stdShortTermRefPicSet()
-            // stdLongTermRefPics()
-            // stdReferenceInfo{}
-            // stdDpbSlotInfo{}
+            // dpbSyntax and dpbResult: written whole by each picture's DPB call.
         }
 
         virtual ~VkVideoEncodeFrameInfoH265() {
@@ -112,7 +96,8 @@ public:
         , m_pps{}
         , m_rateControlInfoH265{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR}
         , m_rateControlLayersInfoH265{{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR}}
-        , m_dpb{}
+        , m_dpb()
+        , m_dpbPictures()
     { }
 
     virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig) override;
@@ -173,7 +158,8 @@ private:
     StdVideoH265PictureParameterSet            m_pps;
     VkVideoEncodeH265RateControlInfoKHR        m_rateControlInfoH265;
     VkVideoEncodeH265RateControlLayerInfoKHR   m_rateControlLayersInfoH265[1];
-    VkEncDpbH265                               m_dpb;
+    vvs::dpb::H265Encode                       m_dpb;
+    VkEncoderDpbPictures                       m_dpbPictures;
     VkSharedBaseObj<VulkanBufferPool<VkVideoEncodeFrameInfoH265>> m_frameInfoBuffersQueue;
 };
 

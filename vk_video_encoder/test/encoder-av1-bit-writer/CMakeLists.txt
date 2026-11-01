@@ -17,7 +17,7 @@ project(vk-video-encoder-av1-bit-writer LANGUAGES CXX)
 
 # The AV1 encoder's bit writer (VkVideoEncoderAV1::VkVideoEncoderAV1BitWriter), which writes the
 # show_existing_frame frame header OBU, is inline in its header: the test compiles it with the
-# encoder's include paths and needs no library.
+# encoder's include paths and the DPB library's, and needs no library.
 add_executable(${PROJECT_NAME} src/main.cpp)
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}/../libs
@@ -26,6 +26,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_BINARY_DIR}/generated
     ${CMAKE_BINARY_DIR}/generated/VkCodecUtils
     ${VULKAN_HEADERS_INCLUDE_DIR}
+    $<TARGET_PROPERTY:vkvideo-dpb,INTERFACE_INCLUDE_DIRECTORIES>
 )
 add_dependencies(${PROJECT_NAME} ${VULKAN_VIDEO_ENCODER_STATIC_LIB})
 

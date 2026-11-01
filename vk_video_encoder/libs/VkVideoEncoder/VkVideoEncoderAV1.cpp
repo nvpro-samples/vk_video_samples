@@ -28,17 +28,6 @@
 #define FrameIsInter(frameType) ((frameType == STD_VIDEO_AV1_FRAME_TYPE_INTER))
 #define FrameIsSwitch(frameType) ((frameType == STD_VIDEO_AV1_FRAME_TYPE_SWITCH))
 
-static StdVideoAV1ReferenceName refNameList[] =
-{
-    STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME,
-    STD_VIDEO_AV1_REFERENCE_NAME_LAST2_FRAME,
-    STD_VIDEO_AV1_REFERENCE_NAME_LAST3_FRAME,
-    STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME,
-    STD_VIDEO_AV1_REFERENCE_NAME_BWDREF_FRAME,
-    STD_VIDEO_AV1_REFERENCE_NAME_ALTREF2_FRAME,
-    STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME
-};
-
 #define MAKE_FOURCC( ch0, ch1, ch2, ch3 )                               \
                 ( (uint32_t)(uint8_t)(ch0) | ( (uint32_t)(uint8_t)(ch1) << 8 ) |    \
                 ( (uint32_t)(uint8_t)(ch2) << 16 ) | ( (uint32_t)(uint8_t)(ch3) << 24 ) )
@@ -108,14 +97,40 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // Initialize DPB
-    m_dpbAV1 = VkEncDpbAV1::CreateInstance();
-    assert(m_dpbAV1);
-    m_dpbAV1->DpbSequenceStart(m_encoderConfig, m_maxDpbPicturesCount);
-
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_stateAV1.m_rateControlInfoAV1, m_stateAV1.m_rateControlLayersInfoAV1);
 
     m_encoderConfig->InitSequenceHeader(&m_stateAV1.m_sequenceHeader, m_stateAV1.m_operatingPointsInfo);
+
+    // The DPB: the session's slots and active references bound it, its pictures are images of the DPB
+    // image pool, and every frame is set up. The GOP says whether it has B pictures.
+    VvsDpbCreateInfo dpbCreateInfo{};
+    dpbCreateInfo.apiVersion = VVS_DPB_API_VERSION;
+    dpbCreateInfo.flags = VVS_DPB_CREATE_SETUP_EVERY_PICTURE_BIT;
+    if (m_encoderConfig->enableIntraRefresh) {
+        dpbCreateInfo.flags |= VVS_DPB_CREATE_INTRA_REFRESH_BIT;
+    }
+    dpbCreateInfo.pVideoProfile = m_encoderConfig->videoCoreProfile.GetProfile();
+    dpbCreateInfo.maxDpbSlots = m_maxDpbPicturesCount;
+    dpbCreateInfo.maxActiveReferencePictures = m_encoderConfig->videoCapabilities.maxActiveReferencePictures;
+    dpbCreateInfo.slotPolicy = VVS_DPB_SLOT_POLICY_LOWEST_FREE;
+    dpbCreateInfo.resources = m_dpbPictures.Resources(&m_dpbImagePool);
+    result = m_dpb.Create(dpbCreateInfo);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR("InitEncoderCodec: the DPB context was not created (%d)\n", result);
+        return result;
+    }
+    VvsDpbGopInfo dpbGopInfo{};
+    dpbGopInfo.gopStructure = VVS_DPB_GOP_STRUCTURE_IRREGULAR;
+    dpbGopInfo.gopFrameCount = m_encoderConfig->gopStructure.GetGopFrameCount();
+    dpbGopInfo.consecutiveBipredictiveFrameCount = m_encoderConfig->gopStructure.GetConsecutiveBFrameCount();
+    const VvsDpbAV1SequenceInfo dpbSequenceInfo{&m_stateAV1.m_sequenceHeader, &m_encoderConfig->av1EncodeCapabilities,
+                                                m_encoderConfig->enableIntraRefresh ? &m_encoderConfig->intraRefreshCapabilities : nullptr,
+                                                &dpbGopInfo};
+    result = m_dpb.Sequence(dpbSequenceInfo, nullptr);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR("InitEncoderCodec: the DPB refused the sequence header (%d)\n", result);
+        return result;
+    }
 
     VideoSessionParametersInfoAV1 videoSessionParametersInfo(*m_videoSession, &m_stateAV1.m_sequenceHeader,
                                                           nullptr/*decoderModelInfo*/,
@@ -233,284 +248,79 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         DumpStateInfo("process DPB", 3, encodeFrameInfo, frameIdx, ofTotalFrames);
     }
 
-    uint32_t flags = 0;
-    if (pFrameInfo->gopPosition.pictureType != VkVideoGopStructure::FRAME_TYPE_B) {
-        if ((pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_I) &&
-            (encodeFrameInfo->gopPosition.inputOrder == encodeFrameInfo->gopPosition.encodeOrder)) {
-                flags = 1 << STD_VIDEO_AV1_REFERENCE_NAME_INTRA_FRAME;
-        } else {
-            flags = (m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() == 0) ? 0 :
-                        (m_numBFramesToEncode == 0 ? (1 << STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME) :
-                            (1 << STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME));
-        }
-    }
-    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
-    StdVideoAV1ReferenceName refName = m_dpbAV1->AssignReferenceFrameType(pFrameInfo->gopPosition.pictureType, flags, isReference);
-    InitializeFrameHeader(&m_stateAV1.m_sequenceHeader, pFrameInfo, refName);
-    if (!pFrameInfo->bShowExistingFrame) {
-        m_dpbAV1->SetupReferenceFrameGroups(pFrameInfo->gopPosition.pictureType, pFrameInfo->stdPictureInfo.frame_type, pFrameInfo->picOrderCntVal);
-        // A primary reference frame whose name none of the picture's references has is used for
-        // its CDFs only, which not every device takes.
-        pFrameInfo->stdPictureInfo.primary_ref_frame = (uint8_t)m_dpbAV1->ResolvePrimaryRefFrame();
-        // For B pictures, L1 must be non zero.  Switch to P picture if L1 is zero.
-        if ((pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) && (m_dpbAV1->GetNumRefsL1()  == 0)) {
-            pFrameInfo->gopPosition.pictureType = VkVideoGopStructure::FRAME_TYPE_P;
-            m_numBFramesToEncode--; // picture type changed from B to P.  Reduce the B frame count to encode.
-        }
-        // TODO: How about P pictures with L1 > 0? Should we change it to B?
-    }
-    VkVideoEncoderAV1FrameUpdateType frameUpdateType = m_dpbAV1->GetFrameUpdateType(refName, pFrameInfo->bOverlayFrame);
+    InitializeFrameHeader(&m_stateAV1.m_sequenceHeader, pFrameInfo);
 
-    int8_t dpbIndx = m_dpbAV1->DpbPictureStart(pFrameInfo->stdPictureInfo.frame_type, refName,
-                                               pFrameInfo->picOrderCntVal,
-                                               pFrameInfo->stdPictureInfo.current_frame_id,
-                                               pFrameInfo->bShowExistingFrame, pFrameInfo->frameToShowBufId);
-
-    assert(dpbIndx >= 0);
-
-    m_dpbAV1->ConfigureRefBufUpdate(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame, frameUpdateType);
-
-    // For show existing frame, skip stale reference invalidation and return early.
-    // Show existing frames don't have a valid frameEncodeEncodeOrderNum since they
-    // don't represent a new encoded frame - they just display a previously encoded one.
     if (pFrameInfo->bShowExistingFrame) {
-        pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
-        m_dpbAV1->DpbPictureEnd(dpbIndx, encodeFrameInfo->setupImageResource/*nullptr*/, &m_stateAV1.m_sequenceHeader,
-                                pFrameInfo->bShowExistingFrame, pFrameInfo->bShownKeyFrameOrSwitch,
-                                pFrameInfo->stdPictureInfo.flags.error_resilient_mode,
-                                pFrameInfo->bOverlayFrame,
-                                refName, frameUpdateType);
+        // The buffer that holds the frame to show, and the frame's own fields for its header.
+        uint8_t frameToShowMapIdx = 0;
+        const VkResult result = m_dpb.ShowExistingFrame(pFrameInfo->picOrderCntVal, &frameToShowMapIdx, pFrameInfo->dpbResult);
+        if (result != VK_SUCCESS) {
+            LOG_ERROR("ProcessDpb: the DPB holds no frame to show (%d)\n", result);
+            return result;
+        }
+        pFrameInfo->frameToShowBufId = frameToShowMapIdx;
+        VvsDpbReferenceFrame frames[VVS_DPB_MAX_SLOTS];
+        uint32_t count = VVS_DPB_MAX_SLOTS;
+        m_dpb.GetReferenceFrames(&count, frames);
+        for (uint32_t i = 0; i < count; i++) {
+            if (((frames[i].av1BufferMask >> frameToShowMapIdx) & 1U) != 0) {
+                pFrameInfo->stdPictureInfo.frame_type = frames[i].stdReferenceInfo.av1.frame_type;
+                pFrameInfo->stdPictureInfo.current_frame_id = frames[i].stdReferenceInfo.av1.RefFrameId;
+            }
+        }
         return VK_SUCCESS;
     }
 
-    if (pFrameInfo->frameEncodeEncodeOrderNum != uint64_t(-1)) {
-        assert(pFrameInfo->frameEncodeEncodeOrderNum <= std::numeric_limits<uint32_t>::max());
-        m_dpbAV1->InvalidateStaleReferenceFrames(static_cast<uint32_t>(pFrameInfo->frameEncodeEncodeOrderNum), pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
-    }
-
-    pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
-
-    // setup recon picture (pSetupReferenceSlot)
-    bool success = m_dpbImagePool->GetAvailableImage(encodeFrameInfo->setupImageResource,
-                                                     VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
-    assert(success);
-    assert(encodeFrameInfo->setupImageResource != nullptr);
-    if (!success || (encodeFrameInfo->setupImageResource == nullptr)) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    VkVideoPictureResourceInfoKHR* setupImageViewPictureResource = encodeFrameInfo->setupImageResource->GetPictureResourceInfo();
-    setupImageViewPictureResource->codedOffset = pFrameInfo->encodeInfo.srcPictureResource.codedOffset;
-    setupImageViewPictureResource->codedExtent = pFrameInfo->encodeInfo.srcPictureResource.codedExtent;
-
-    uint32_t numReferenceSlots = 0;
-    assert(pFrameInfo->numDpbImageResources == 0);
-    if (encodeFrameInfo->setupImageResource != nullptr) {
-        assert(setupImageViewPictureResource);
-        m_dpbAV1->FillStdReferenceInfo((uint8_t) dpbIndx, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
-
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIndx;
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource = setupImageViewPictureResource;
-
-        pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
-        pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
-        pFrameInfo->dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-        vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->dpbSlotInfo[numReferenceSlots]);
-
-        pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[numReferenceSlots];
-        pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
-
-        numReferenceSlots++;
-        assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
-    } else {
-        pFrameInfo->encodeInfo.pSetupReferenceSlot = nullptr;
-    }
-
     const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
-    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
-        // The number of dirty intra-refresh regions in the current picture
-        uint32_t dirtyIntraRefreshRegions = m_encoderConfig->intraRefreshCycleDuration - encodeFrameInfo->gopPosition.intraRefreshIndex - 1;
+    const bool intraRefresh = m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame;
 
-        m_dpbAV1->SetDirtyIntraRefreshRegions(dpbIndx, dirtyIntraRefreshRegions);
+    // The DPB library decides the references, their names and buffers, the frame header's reference
+    // fields, the prediction mode, and the slots.
+    VvsDpbPictureInfo dpbFrameInfo{};
+    switch (pFrameInfo->gopPosition.pictureType) {
+        case VkVideoGopStructure::FRAME_TYPE_IDR:
+            dpbFrameInfo.pictureType = VVS_DPB_PICTURE_TYPE_KEY;
+            break;
+        case VkVideoGopStructure::FRAME_TYPE_I:
+            dpbFrameInfo.pictureType = VVS_DPB_PICTURE_TYPE_INTRA;
+            break;
+        case VkVideoGopStructure::FRAME_TYPE_B:
+            dpbFrameInfo.pictureType = VVS_DPB_PICTURE_TYPE_BIPREDICTIVE;
+            break;
+        default:
+            dpbFrameInfo.pictureType = VVS_DPB_PICTURE_TYPE_PREDICTIVE;
+            break;
+    }
+    dpbFrameInfo.displayOrderIndex = pFrameInfo->picOrderCntVal;
+    dpbFrameInfo.encodeOrderIndex = pFrameInfo->frameEncodeEncodeOrderNum;
+    VvsDpbAV1EncodePictureInfo dpbPictureInfo{};
+    dpbPictureInfo.pPictureInfo = &dpbFrameInfo;
+    // The number of dirty intra-refresh regions in the current picture
+    dpbPictureInfo.dirtyIntraRefreshRegions =
+        intraRefresh ? (m_encoderConfig->intraRefreshCycleDuration - encodeFrameInfo->gopPosition.intraRefreshIndex - 1)
+                     : VVS_DPB_NO_INTRA_REFRESH;
+    dpbPictureInfo.reference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition) ? VK_TRUE : VK_FALSE;
+    dpbPictureInfo.pPictureInfoAV1 = &pFrameInfo->pictureInfo;
+    dpbPictureInfo.pStdPictureInfo = &pFrameInfo->stdPictureInfo;
+    m_dpbPictures.BeginPicture(pFrameInfo);
+    const VkResult result = m_dpb.Picture(dpbPictureInfo, pFrameInfo->dpbResult);
+    // The frame holds the images its commands read and write until it completes.
+    m_dpbPictures.EndPicture(pFrameInfo, (result == VK_SUCCESS) ? &pFrameInfo->dpbResult.slots : nullptr);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR("ProcessDpb: the DPB refused the frame (%d)\n", result);
+        return result;
     }
 
-    // reference frames
-    memset(pFrameInfo->pictureInfo.referenceNameSlotIndices, 0xff, sizeof(pFrameInfo->pictureInfo.referenceNameSlotIndices));
-    // CDF-only use of the primary reference needs a primary reference: with
-    // primary_ref_frame PRIMARY_REF_NONE (intra frames, error resilient mode)
-    // there is none, and primaryReferenceCdfOnly must be false.
-    bool primaryRefCdfOnly = (pFrameInfo->stdPictureInfo.primary_ref_frame != STD_VIDEO_AV1_PRIMARY_REF_NONE);
-    for (uint32_t groupId = 0; groupId < 2; groupId++) {
-        for (int32_t i = 0; i < m_dpbAV1->GetNumRefsInGroup(groupId); i++) {
-            int32_t refNameMinus1 = m_dpbAV1->GetRefNameMinus1(groupId, i);
-
-            int32_t dpbIdx = m_dpbAV1->GetDpbIdx(groupId, i);
-            assert(dpbIdx == m_dpbAV1->GetDpbIdx(refNameMinus1));
-
-            assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[refNameMinus1] == -1);
-            pFrameInfo->pictureInfo.referenceNameSlotIndices[refNameMinus1] = dpbIdx;
-
-            VkSharedBaseObj<VulkanVideoImagePoolNode> dpbImageView;
-            bool refPicAvailable = m_dpbAV1->GetDpbPictureResource(dpbIdx, dpbImageView);
-            assert(refPicAvailable);
-            if (!refPicAvailable) {
-                return VK_ERROR_INITIALIZATION_FAILED;
-            }
-
-            bool bDuplicate = false;
-            for (uint32_t j = 0; j < numReferenceSlots; j++) {
-                if ((pFrameInfo->dpbImageResources[j] != nullptr) &&
-                        (pFrameInfo->dpbImageResources[j]->GetImageIndex() == dpbImageView->GetImageIndex())) {
-                    bDuplicate = true;
-                    break;
-                }
-            }
-
-            if (bDuplicate) {
-                continue;
-            }
-
-            m_dpbAV1->FillStdReferenceInfo((uint8_t)dpbIdx, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
-            
-            pFrameInfo->dpbImageResources[numReferenceSlots] = dpbImageView;
-            
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIdx;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
-                    pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
-
-            pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
-            pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
-            pFrameInfo->dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-            vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->dpbSlotInfo[numReferenceSlots]);
-
-            if (isIntraRefreshFrame) {
-                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
-                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].pNext = nullptr;
-                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].dirtyIntraRefreshRegions =
-                    m_dpbAV1->GetDirtyIntraRefreshRegions((int8_t)dpbIdx);
-                vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots]);
-            }
-
-            if (refNameMinus1 == pFrameInfo->stdPictureInfo.primary_ref_frame) {
-                primaryRefCdfOnly = false;
-            }
-
-            numReferenceSlots++;
-        }
+    // A B picture the DPB codes without a reference after it is a P picture.
+    if ((pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) &&
+        (pFrameInfo->pictureInfo.rateControlGroup != VK_VIDEO_ENCODE_AV1_RATE_CONTROL_GROUP_BIPREDICTIVE_KHR)) {
+        pFrameInfo->gopPosition.pictureType = VkVideoGopStructure::FRAME_TYPE_P;
     }
 
-    // Do not include primary_ref_frame reference when primaryRefCdfOnly in predictionMode calculation
-    // If curent picture is a key frame or intra frame, use INTRA prediction mode.
-    // If both groups contain atleast 1 picture, use BIDIR_COMP prediction. (UNIDIR_COMP prediction also possible)
-    // else if any of the group contains more than 1 picture, use UNIDIR_COMP (Refer section 5.11.25 of AV1 spec)
-    // else use SINGLE
-    const auto& encodeCaps = m_encoderConfig->av1EncodeCapabilities;
-    bool bLastRefFramePresent = (pFrameInfo->pictureInfo.referenceNameSlotIndices[STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] != -1);
-    bool bBwdRefFramePreset = (pFrameInfo->pictureInfo.referenceNameSlotIndices[STD_VIDEO_AV1_REFERENCE_NAME_BWDREF_FRAME - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] != -1);
-    bool bAltRefFramePreset = (pFrameInfo->pictureInfo.referenceNameSlotIndices[STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] != -1);
-    if ((pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_I) || (pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR)) {
-        pFrameInfo->pictureInfo.predictionMode = VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_INTRA_ONLY_KHR;
-    } else if ((m_dpbAV1->GetNumRefsInGroup1() > 0) && (m_dpbAV1->GetNumRefsInGroup2() > 0)) {
-        pFrameInfo->pictureInfo.predictionMode = VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_BIDIRECTIONAL_COMPOUND_KHR;
-    } else if ((bLastRefFramePresent && (m_dpbAV1->GetNumRefsInGroup1() >= 2)) || (bBwdRefFramePreset && bAltRefFramePreset)) {
-        pFrameInfo->pictureInfo.predictionMode = VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_UNIDIRECTIONAL_COMPOUND_KHR;
-    } else {
-        pFrameInfo->pictureInfo.predictionMode = VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_SINGLE_REFERENCE_KHR;
-    }
-
-    // If any of the optimal reference modes are not supported, fall back to a simpler mode
-    if (pFrameInfo->pictureInfo.predictionMode == VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_BIDIRECTIONAL_COMPOUND_KHR &&
-        encodeCaps.maxBidirectionalCompoundReferenceCount == 0) {
-        // TODO: try to remap the references to unidirectional, based on mask/counts
-        pFrameInfo->pictureInfo.predictionMode = VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_UNIDIRECTIONAL_COMPOUND_KHR;
-    }
-    if (pFrameInfo->pictureInfo.predictionMode == VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_UNIDIRECTIONAL_COMPOUND_KHR &&
-        encodeCaps.maxUnidirectionalCompoundReferenceCount == 0) {
-        // TODO: try to remap the references to single reference, based on mask/count
-        pFrameInfo->pictureInfo.predictionMode = VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_SINGLE_REFERENCE_KHR;
-    }
-    if (pFrameInfo->pictureInfo.predictionMode == VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_SINGLE_REFERENCE_KHR &&
-        encodeCaps.maxSingleReferenceCount == 0) {
-        pFrameInfo->pictureInfo.predictionMode = VK_VIDEO_ENCODE_AV1_PREDICTION_MODE_INTRA_ONLY_KHR;
-    }
-
-    // If primary_ref_frame is not in reference list, add it explicity
-    if ((pFrameInfo->stdPictureInfo.primary_ref_frame != STD_VIDEO_AV1_PRIMARY_REF_NONE) && (primaryRefCdfOnly)) {
-        int32_t dpbIdx = m_dpbAV1->GetDpbIdx(pFrameInfo->stdPictureInfo.primary_ref_frame);
-
-        VkSharedBaseObj<VulkanVideoImagePoolNode> dpbImageView;
-        bool refPicAvailable = m_dpbAV1->GetDpbPictureResource(dpbIdx, dpbImageView);
-        assert(refPicAvailable);
-        if (!refPicAvailable) {
-            return VK_ERROR_INITIALIZATION_FAILED;
-        }
-
-        bool bDuplicate = false;
-        for (uint32_t j = 0; j < numReferenceSlots; j++) {
-            if ((pFrameInfo->dpbImageResources[j] != nullptr) &&
-                    (pFrameInfo->dpbImageResources[j]->GetImageIndex() == dpbImageView->GetImageIndex())) {
-                bDuplicate = true;
-                break;
-            }
-        }
-        if (bDuplicate) {
-            // reference is already present.  So, update referenceNameSlotIndices
-            assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] == -1);
-            pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] = dpbIdx;
-        } else {
-            // reference itself is not present.  Add it to the referenceSlotInfo and udpate referenceNameSlotIndices
-            m_dpbAV1->FillStdReferenceInfo((uint8_t)dpbIdx, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
-            
-            pFrameInfo->dpbImageResources[numReferenceSlots] = dpbImageView;
-
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIdx;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
-                    pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
-
-            pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
-            pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
-            pFrameInfo->dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-            vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->dpbSlotInfo[numReferenceSlots]);
-
-            assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] == -1);
-            pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] = dpbIdx;
-
-            numReferenceSlots++;
-        }
-    }
-
-    pFrameInfo->encodeInfo.referenceSlotCount = numReferenceSlots - 1;
-    pFrameInfo->encodeInfo.pReferenceSlots = pFrameInfo->referenceSlotsInfo + 1;
-    pFrameInfo->numDpbImageResources = numReferenceSlots;
-
-    pFrameInfo->pictureInfo.primaryReferenceCdfOnly = primaryRefCdfOnly;
-    if (pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) {
-        pFrameInfo->pictureInfo.rateControlGroup = VK_VIDEO_ENCODE_AV1_RATE_CONTROL_GROUP_PREDICTIVE_KHR;
-    } else if (pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
-        pFrameInfo->pictureInfo.rateControlGroup = VK_VIDEO_ENCODE_AV1_RATE_CONTROL_GROUP_BIPREDICTIVE_KHR;
-    } else {
-        pFrameInfo->pictureInfo.rateControlGroup = VK_VIDEO_ENCODE_AV1_RATE_CONTROL_GROUP_INTRA_KHR;
-    }
-
-    m_dpbAV1->DpbPictureEnd(dpbIndx, encodeFrameInfo->setupImageResource, &m_stateAV1.m_sequenceHeader,
-                            pFrameInfo->bShowExistingFrame, pFrameInfo->bShownKeyFrameOrSwitch,
-                            pFrameInfo->stdPictureInfo.flags.error_resilient_mode,
-                            pFrameInfo->bOverlayFrame,
-                            refName, frameUpdateType);
-
-
-    // this is needed to explicity mark the unused element in BeginInfo for vkCmdBeginVideoCodingKHR() as inactive
-    pFrameInfo->referenceSlotsInfo[0].slotIndex = -1;
-
-    if (pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
-        assert(m_numBFramesToEncode != 0);
-        m_numBFramesToEncode--;
-    }
+    const VvsDpbPictureSlots& slots = pFrameInfo->dpbResult.slots;
+    vvs::dpb::SetEncodeSlots(slots, pFrameInfo->encodeInfo);
+    pFrameInfo->pBeginCodingReferenceSlots = slots.referenceSlots;
+    pFrameInfo->beginCodingReferenceSlotCount = slots.beginCodingSlotCount;
 
     return VK_SUCCESS;
 }
@@ -543,9 +353,6 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
     pFrameInfo->bShowExistingFrame = false;
     pFrameInfo->bOverlayFrame = false;
-    if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
-        m_numBFramesToEncode++;
-    }
     if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
         assert(encodeFrameInfo->picOrderCntVal == 0);
         m_lastKeyFrameOrderHint = encodeFrameInfo->picOrderCntVal;
@@ -625,8 +432,7 @@ VkResult VkVideoEncoderAV1::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEnc
     return VK_SUCCESS;
 }
 
-void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequenceHdr, VkVideoEncodeFrameInfoAV1* pFrameInfo,
-                                              StdVideoAV1ReferenceName& refName)
+void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequenceHdr, VkVideoEncodeFrameInfoAV1* pFrameInfo)
 {
     // No overlay frame support. Instead display the ARF, ARF2 using show_existing_frame=1
     // No switch frame support
@@ -658,60 +464,18 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
         pStdPictureInfo->render_height_minus_1 = (uint16_t)(m_encoderConfig->PictureHeight() - 1);
     }
     pStdPictureInfo->order_hint = (uint8_t)(pFrameInfo->picOrderCntVal % (1 << orderHintBits));
-    if (pFrameInfo->bOverlayFrame) {
-        assert(pFrameInfo->bShowExistingFrame);
-        pFrameInfo->frameToShowBufId = m_dpbAV1->GetOverlayRefBufId(pFrameInfo->picOrderCntVal);
-        assert(pFrameInfo->frameToShowBufId != VkEncDpbAV1::INVALID_IDX);
-        // Re-initialize
-        int32_t refBufDpbId = m_dpbAV1->GetRefBufDpbId(pFrameInfo->frameToShowBufId);
-        refName = m_dpbAV1->GetRefName(refBufDpbId);
-        pStdPictureInfo->frame_type = m_dpbAV1->GetFrameType(refBufDpbId);
-        pStdPictureInfo->current_frame_id = m_dpbAV1->GetFrameId(refBufDpbId);
-    }
 
-    pStdPictureInfo->flags.show_frame = (((refName == STD_VIDEO_AV1_REFERENCE_NAME_BWDREF_FRAME) ||
-                                          (refName == STD_VIDEO_AV1_REFERENCE_NAME_ALTREF2_FRAME) ||
-                                          (refName == STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME)) &&
-                                            (!pFrameInfo->bOverlayFrame)) ? 0 : 1;
+    // A frame encoded ahead of frames displayed before it is hidden, and shown later with
+    // show_existing_frame. The DPB library writes the reference fields.
+    const bool hidden = !pFrameInfo->bShowExistingFrame &&
+                        (pFrameInfo->gopPosition.pictureType != VkVideoGopStructure::FRAME_TYPE_B) &&
+                        (pFrameInfo->gopPosition.pictureType != VkVideoGopStructure::FRAME_TYPE_IDR) &&
+                        (pFrameInfo->gopPosition.inputOrder != pFrameInfo->gopPosition.encodeOrder);
+    pStdPictureInfo->flags.show_frame = hidden ? 0 : 1;
     pStdPictureInfo->flags.showable_frame = (pStdPictureInfo->flags.show_frame) ? (FrameIsKey(pStdPictureInfo->frame_type) ? 0 : 1) : 1;
     if ((pStdPictureInfo->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY) && (pStdPictureInfo->flags.show_frame == 1)) {
         pStdPictureInfo->flags.error_resilient_mode = 1;
     }
-    pFrameInfo->bShownKeyFrameOrSwitch = (FrameIsKey(pStdPictureInfo->frame_type) && pStdPictureInfo->flags.show_frame) ||
-                                            FrameIsSwitch(pStdPictureInfo->frame_type);
-
-    if (!pFrameInfo->bShowExistingFrame) {
-        if (FrameIsInter(pStdPictureInfo->frame_type) || FrameIsSwitch(pStdPictureInfo->frame_type)) {
-            for (StdVideoAV1ReferenceName ref : refNameList) {
-
-                if (pSequenceHdr->flags.frame_id_numbers_present_flag) {
-                    int32_t dpbIdx = m_dpbAV1->GetRefFrameDpbId(ref);
-                    if (dpbIdx == VkEncDpbAV1::INVALID_IDX){
-                        assert(0);
-                        continue;
-                    }
-                    int32_t deltaFrameIdMinus1 = ((pStdPictureInfo->current_frame_id - m_dpbAV1->GetFrameId(dpbIdx) + ( 1<< frameIdBits))) % (1 << frameIdBits) - 1;
-                    assert((deltaFrameIdMinus1 >= 0) && (deltaFrameIdMinus1 < (1 << (pSequenceHdr->delta_frame_id_length_minus_2 + 2))));
-                    pStdPictureInfo->delta_frame_id_minus_1[ref - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] =deltaFrameIdMinus1;
-                }
-
-                pStdPictureInfo->ref_frame_idx[ref - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] = (int8_t)m_dpbAV1->GetRefBufId(ref);
-            }
-
-            for (uint32_t bufIdx = 0; bufIdx < STD_VIDEO_AV1_NUM_REF_FRAMES; bufIdx++) {
-                int32_t dpbIdx = m_dpbAV1->GetRefBufDpbId(bufIdx);
-                assert(dpbIdx != VkEncDpbAV1::INVALID_IDX);
-                // Masked by the advertised width rather than by the cast, so
-                // this holds for whatever width the sequence header states.
-                pStdPictureInfo->ref_order_hint[bufIdx] =
-                    (uint8_t)(m_dpbAV1->GetPicOrderCntVal(dpbIdx) %
-                              (1 << ORDER_HINT_BITS));
-            }
-        }
-    }
-    pStdPictureInfo->primary_ref_frame = (uint8_t)m_dpbAV1->GetPrimaryRefFrame(pStdPictureInfo->frame_type, refName,
-                                                                               pStdPictureInfo->flags.error_resilient_mode,
-                                                                               pFrameInfo->bOverlayFrame);
 
     pStdPictureInfo->pTileInfo = nullptr;
     pStdPictureInfo->pQuantization = nullptr;
