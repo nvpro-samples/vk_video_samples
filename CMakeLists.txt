@@ -595,6 +595,8 @@ if(BUILD_ENCODER)
             message(STATUS "Vulkan Video Encoder Lib: ${VULKAN_VIDEO_ENCODER_LIB_WITH_PATH}" )
         endif()
     endif()
+    # vkvideo-dpb, the encoder's DPB library.
+    add_subdirectory(common/libs/VkVideoDpb)
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vk_video_encoder/libs")
         add_subdirectory(vk_video_encoder/libs)
     else()
