@@ -80,8 +80,7 @@ enable_testing()
 # the gate recognises that code and emits the skip token CTest matches on.
 #
 # GATED ON VALIDATION. The drain restarts the assembly workers mid-session and
-# the frames submitted after it re-enter the same registration and submission
-# path, which is where a lifetime or synchronisation violation would appear.
+# the frames submitted after it re-enter the same submission path, which is where a lifetime or synchronisation violation would appear.
 # vvs_add_validation_gated_test() forces the validation layer on and fails
 # the arm that produced a message; no ceiling is declared, so any message at
 # all is a failure.

@@ -25,10 +25,6 @@
 
 #include <cstdio>
 #include <cstring>
-#include <atomic>
-#include <unistd.h>
-#include <fcntl.h>
-#include <cerrno>
 
 using namespace vk::video::enc;
 
@@ -147,27 +143,19 @@ void TestFormatClassification()
         {VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, ColorModel::YCbCr, true,
          InputPath::Copy, FilterAccess::NoFilter, "NV12 is taken directly"},
 
-        // Three-plane I420 is addressed a plane at a time.
-        {VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM, ColorModel::YCbCr, true,
-         InputPath::ComputeFilter, FilterAccess::PlaneStorage,
-         "I420 needs the filter, addressing planes"},
+        // Formats the encoder reaches only through the compute filter are
+        // refused, as Validate refuses them: a submitted frame is read
+        // directly or copied.
+        {VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM, ColorModel::YCbCr, false,
+         InputPath::Copy, FilterAccess::NoFilter, "I420 is refused"},
         {VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16, ColorModel::YCbCr,
-         true, InputPath::ComputeFilter, FilterAccess::PlaneStorage,
-         "I420 10-bit needs the filter, addressing planes"},
-        {VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16, ColorModel::YCbCr,
-         true, InputPath::ComputeFilter, FilterAccess::PlaneStorage,
-         "I420 12-bit needs the filter, addressing planes"},
-
-        // RGB is one plane, read as a storage image.
-        {VK_FORMAT_R8G8B8A8_UNORM, ColorModel::Rgb, true,
-         InputPath::ComputeFilter, FilterAccess::StorageRead,
-         "RGBA needs the filter, read as storage"},
-        {VK_FORMAT_B8G8R8A8_UNORM, ColorModel::Rgb, true,
-         InputPath::ComputeFilter, FilterAccess::StorageRead,
-         "BGRA needs the filter, read as storage"},
-        {VK_FORMAT_A8B8G8R8_UNORM_PACK32, ColorModel::Rgb, true,
-         InputPath::ComputeFilter, FilterAccess::StorageRead,
-         "packed RGBA needs the filter, read as storage"},
+         false, InputPath::Copy, FilterAccess::NoFilter, "I420 10-bit is refused"},
+        {VK_FORMAT_R8G8B8A8_UNORM, ColorModel::Rgb, false,
+         InputPath::Copy, FilterAccess::NoFilter, "RGBA is refused"},
+        {VK_FORMAT_B8G8R8A8_UNORM, ColorModel::Rgb, false,
+         InputPath::Copy, FilterAccess::NoFilter, "BGRA is refused"},
+        {VK_FORMAT_A8B8G8R8_UNORM_PACK32, ColorModel::Rgb, false,
+         InputPath::Copy, FilterAccess::NoFilter, "packed RGBA is refused"},
 
         // Not a picture format on any route.
         {VK_FORMAT_D32_SFLOAT, ColorModel::FromFormat, false,
@@ -432,9 +420,6 @@ void TestSessionRoles(const Ref<IEncoderSession>& session)
 {
     Check(Query<IFrameSubmitter>(session) != nullptr,   "IFrameSubmitter resolves");
     Check(Query<IBitstreamSource>(session) != nullptr,  "IBitstreamSource resolves");
-    Check(Query<ICompletionSignal>(session) != nullptr, "ICompletionSignal resolves");
-    Check(Query<IResourceRegistry>(session) != nullptr, "IResourceRegistry resolves");
-    Check(Query<IDiagnostics>(session) != nullptr,      "IDiagnostics resolves");
 
     // A session knows the device it runs on. A caller holding only a session
     // must not have to keep the platform alive to ask.
@@ -471,10 +456,7 @@ void TestSessionRoles(const Ref<IEncoderSession>& session)
             {IEncoderSession::kId.data(),   "IEncoderSession"},
             {IFrameSubmitter::kId.data(),   "IFrameSubmitter"},
             {IBitstreamSource::kId.data(),  "IBitstreamSource"},
-            {ICompletionSignal::kId.data(), "ICompletionSignal"},
-            {IResourceRegistry::kId.data(), "IResourceRegistry"},
             {IDeviceBinding::kId.data(),    "IDeviceBinding"},
-            {IDiagnostics::kId.data(),      "IDiagnostics"},
         };
         uint32_t reachable = 0;
         for (const RoleRow& role : kRoles) {
@@ -529,24 +511,36 @@ void TestConfigRules(const Ref<IEncoderPlatform>& platform)
     Check((*h264)->ResolveInputPath() == InputPath::Copy,
           "NV12 resolves to a copy, not a compute filter");
 
-    // H.264 carries no mastering-display or content-light SEI, so the role is
-    // absent rather than present-and-refusing.
-    Check(Query<IHdrMetadataConfig>(*h264) == nullptr,
-          "an H.264 configuration offers no HDR metadata role");
+    // HDR10 static metadata. H.265 and AV1 carry it; H.264 has no
+    // mastering-display or content-light SEI, so Validate refuses it there
+    // rather than accepting metadata the stream would drop.
+    HdrMetadata meta;
+    meta.contentLightLevelPresent  = true;
+    meta.maxContentLightLevel      = 1000;
+    meta.maxFrameAverageLightLevel = 400;
+
+    Expected<Ref<IEncoderConfig>> h264Hdr = platform->CreateConfig(Codec::H264, Profile::H264Main);
+    if (h264Hdr) {
+        (*h264Hdr)->SetCodedExtent(1920, 1080)
+                   .SetFrameRate(60, 1)
+                   .SetInputFormat(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, ColorModel::YCbCr)
+                   .SetHdrMetadata(meta);
+        Result r = (*h264Hdr)->Validate();
+        Check(!r && r.code() == ResultCode::UnsupportedFeature,
+              "HDR10 metadata on an H.264 configuration is refused by Validate");
+    }
 
     Expected<Ref<IEncoderConfig>> h265 = platform->CreateConfig(Codec::H265, Profile::H265Main10);
     if (h265) {
-        Ref<IHdrMetadataConfig> hdr = Query<IHdrMetadataConfig>(*h265);
-        Check(hdr != nullptr, "an H.265 configuration offers the HDR metadata role");
-        if (hdr) {
-            HdrMetadata meta;
-            meta.contentLightLevelPresent  = true;
-            meta.maxContentLightLevel      = 1000;
-            meta.maxFrameAverageLightLevel = 400;
-            hdr->SetHdrMetadata(meta);
-        }
+        (*h265)->SetCodedExtent(1920, 1080)
+                .SetFrameRate(60, 1)
+                .SetInputFormat(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+                                ColorModel::YCbCr)
+                .SetHdrMetadata(meta);
+        Check(static_cast<bool>((*h265)->Validate()),
+              "HDR10 metadata on an H.265 configuration validates");
     } else {
-        Skip("H.265 HDR role check", h265.status().detail());
+        Skip("H.265 HDR metadata check", h265.status().detail());
     }
 
     // A format the encoder cannot read on any path is refused by Validate,
@@ -559,6 +553,13 @@ void TestConfigRules(const Ref<IEncoderPlatform>& platform)
         Result r = (*bad)->Validate();
         Check(!r && r.code() == ResultCode::UnsupportedFormat,
               "a depth format is refused with UnsupportedFormat");
+
+        // So is a format the encoder reaches only through the compute
+        // filter, which no submitted frame runs through.
+        (*bad)->SetInputFormat(VK_FORMAT_R8G8B8A8_UNORM, ColorModel::Rgb);
+        r = (*bad)->Validate();
+        Check(!r && r.code() == ResultCode::UnsupportedFormat,
+              "an RGBA input is refused with UnsupportedFormat");
     }
 }
 
@@ -592,179 +593,6 @@ bool TestCaps(const Ref<IEncoderPlatform>& platform)
 }
 
 //=============================================================================
-// Completion signalling
-//=============================================================================
-
-// What the callback records. Touched from a library thread, so every member is
-// atomic and nothing here allocates or blocks -- the contract forbids both.
-struct CallbackState {
-    std::atomic<uint32_t> invocations{0};
-    std::atomic<uint64_t> lastFrameId{0};
-    std::atomic<bool>     wrongCookie{false};
-};
-
-void OnFrameComplete(uint64_t frameId, void* userData)
-{
-    CallbackState* state = static_cast<CallbackState*>(userData);
-    if (state == nullptr) {
-        return;
-    }
-    state->invocations.fetch_add(1, std::memory_order_relaxed);
-    state->lastFrameId.store(frameId, std::memory_order_relaxed);
-}
-
-// Drive the callback, the counter and the timeline semaphore against a real
-// encode, and check each for what it actually promises rather than for having
-// merely fired.
-void TestCompletionSignal(const Ref<IEncoderPlatform>& platform,
-                          const Ref<IEncoderSession>&  session,
-                          const DeviceFns&             fns,
-                          HostImage&                   image,
-                          uint64_t                     firstFrameId)
-{
-    Ref<ICompletionSignal> completion = Query<ICompletionSignal>(session);
-    Ref<IFrameSubmitter>   submitter  = Query<IFrameSubmitter>(session);
-    Ref<IBitstreamSource>  bitstream  = Query<IBitstreamSource>(session);
-    if (!completion || !submitter || !bitstream) {
-        Skip("completion signalling", "the session does not offer the roles");
-        return;
-    }
-
-    const uint64_t before = completion->CompletedCount();
-
-    CallbackState state;
-    Check(static_cast<bool>(completion->SetCallback(&OnFrameComplete, &state)),
-          "a completion callback installs");
-
-    // The semaphore is live for the length of the session and is the encoder's
-    // to own; a caller never destroys it.
-    const VkSemaphore semaphore = completion->CompletionSemaphore();
-    Check(semaphore != VK_NULL_HANDLE, "a live session vends a completion semaphore");
-
-    const uint32_t kFrames = 6;
-    uint64_t lastId = firstFrameId;
-    for (uint32_t i = 0; i < kFrames; ++i) {
-        const char* why = "";
-        if (!image.WritePattern(i, &why)) {
-            Skip("completion signalling", why);
-            return;
-        }
-        FrameSubmit frame;
-        // The timeline currency requires monotonically increasing ids, and
-        // reaching frameId + 1 is what it means by "this one has retired".
-        frame.frameId = firstFrameId + i;
-        frame.pts     = i * 3000;
-        frame.image   = DescribeImage(image);
-        lastId        = frame.frameId;
-        if (!submitter->SubmitFrame(frame)) {
-            Skip("completion signalling", "submission failed");
-            return;
-        }
-    }
-
-    Check(static_cast<bool>(session->Drain()), "the drain completes");
-
-    const uint64_t after = completion->CompletedCount();
-    fprintf(stderr, "        completions %llu -> %llu, %u callback invocations\n",
-            (unsigned long long)before, (unsigned long long)after,
-            state.invocations.load());
-
-    Check(after >= before + kFrames,
-          "the completion counter advances by at least the frames submitted");
-
-    // Notifications coalesce -- one invocation may cover several frames -- so
-    // the check is that the callback fired at all and never more often than
-    // there were completions. Asserting one-per-frame would encode a promise
-    // the library explicitly does not make.
-    Check(state.invocations.load() > 0, "the completion callback fires");
-    Check(state.invocations.load() <= after - before,
-          "the callback never fires more often than frames complete");
-    Check(!state.wrongCookie.load(), "the callback receives its own user data");
-
-    // The documented reconciliation: drain retrieval until the caller's own
-    // count matches the counter, rather than assuming one callback per frame.
-    uint32_t retrieved = 0;
-    while (retrieved < (after - before)) {
-        Expected<EncodedFrame> got = bitstream->AcquireNext();
-        if (!got) {
-            break;
-        }
-        ++retrieved;
-        bitstream->Release(got->frameId);
-    }
-    Check(retrieved == after - before,
-          "retrieval reconciles against the completion counter");
-
-    // The timeline says every frame with an id at or below lastId has had its
-    // encode work retire. It is not a readiness signal, so it is checked after
-    // the drain, where readiness is already established by other means.
-    PFN_vkGetSemaphoreCounterValue getValue =
-        reinterpret_cast<PFN_vkGetSemaphoreCounterValue>(
-            fns.GetDeviceProcAddr(platform->DeviceBinding()->Device(),
-                                  "vkGetSemaphoreCounterValue"));
-    if (getValue != nullptr && semaphore != VK_NULL_HANDLE) {
-        uint64_t value = 0;
-        if (getValue(platform->DeviceBinding()->Device(), semaphore, &value) == VK_SUCCESS) {
-            fprintf(stderr, "        timeline value %llu, last frame id %llu\n",
-                    (unsigned long long)value, (unsigned long long)lastId);
-            Check(value >= lastId + 1,
-                  "the timeline reaches lastFrameId + 1 once the encodes retire");
-        }
-    }
-
-    // An OS handle a non-Vulkan loop can wait on. The caller owns what it gets.
-    Expected<int> handle = completion->ExportCompletionHandle();
-    if (handle) {
-        Check(*handle >= 0, "the completion handle exports a usable descriptor");
-        close(*handle);
-    } else {
-        Skip("completion handle export", handle.status().detail());
-    }
-
-    // Detaching is a quiesce point: once it returns no invocation is in
-    // flight, which is what makes destroying the cookie afterwards safe. The
-    // check that matters is that it returns at all -- a deadlock here would
-    // hang rather than fail.
-    Check(static_cast<bool>(completion->SetCallback(nullptr, nullptr)),
-          "the completion callback detaches");
-
-    // Detaching has to actually stop the notifications, and the only way to
-    // show that is to make more of them: encode further frames and require the
-    // count not to move. Comparing the counter with itself would pass on a
-    // detach that did nothing.
-    const uint32_t atDetach = state.invocations.load();
-    uint32_t moreCompleted = 0;
-    for (uint32_t i = 0; i < 2; ++i) {
-        const char* why = "";
-        if (!image.WritePattern(kFrames + i, &why)) {
-            break;
-        }
-        FrameSubmit frame;
-        frame.frameId = lastId + 1 + i;
-        frame.pts     = (kFrames + i) * 3000;
-        frame.image   = DescribeImage(image);
-        if (!submitter->SubmitFrame(frame)) {
-            break;
-        }
-        ++moreCompleted;
-    }
-    if (moreCompleted > 0) {
-        session->Drain();
-        for (uint32_t i = 0; i < moreCompleted; ++i) {
-            Expected<EncodedFrame> got = bitstream->AcquireNext();
-            if (!got) {
-                break;
-            }
-            bitstream->Release(got->frameId);
-        }
-        Check(completion->CompletedCount() > after,
-              "frames still complete after the callback is detached");
-        Check(state.invocations.load() == atDetach,
-              "a detached callback is not invoked again");
-    }
-}
-
-//=============================================================================
 // Reconfiguration
 //=============================================================================
 
@@ -772,8 +600,6 @@ void TestReconfigure(const Ref<IEncoderPlatform>& platform,
                      const Ref<IEncoderSession>&  session,
                      const Ref<IEncoderConfig>&   config)
 {
-    Ref<IDiagnostics> diag = Query<IDiagnostics>(session);
-
     // What moves: the rate. Handing back the very configuration the session
     // was built from, with the rate changed, is the ordinary case.
     RateControl faster;
@@ -817,11 +643,9 @@ void TestReconfigure(const Ref<IEncoderPlatform>& platform,
         Result refused = session->Reconfigure(*resized);
         Check(!refused && refused.code() == ResultCode::UnsupportedFeature,
               "a resolution change is refused rather than half-applied");
-        if (diag) {
-            fprintf(stderr, "        refusal named: %s\n", diag->LastErrorDetail());
-            Check(strstr(diag->LastErrorDetail(), "width") != nullptr,
-                  "the refusal names the field that cannot change");
-        }
+        fprintf(stderr, "        refusal named: %s\n", refused.detail());
+        Check(strstr(refused.detail(), "width") != nullptr,
+              "the refusal names the field that cannot change");
     }
 
     // The session still encodes after a refusal.
@@ -859,7 +683,6 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
 
     Ref<IFrameSubmitter>  submitter = Query<IFrameSubmitter>(session);
     Ref<IBitstreamSource> bitstream = Query<IBitstreamSource>(session);
-    Ref<IDiagnostics>     diag      = Query<IDiagnostics>(session);
     if (!submitter || !bitstream) {
         Skip("frame transfer", "the session does not offer submit and bitstream roles");
         return false;
@@ -885,7 +708,7 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
         frame.image       = DescribeImage(image);
         frame.forceIdr    = (i == 0);
         // The stream is not ended here. isLastFrame finalises the session, and
-        // the registered-submission checks below still have frames to send.
+        // the checks below still have frames to send.
 
         Result r = submitter->SubmitFrame(frame);
         if (!r) {
@@ -925,54 +748,29 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
     Check(encoded == kFrames, "every submitted frame comes back encoded");
     Check(totalBytes > 0, "the bitstream is not empty");
     Check(firstIsIdr, "the first frame is an IDR");
-    if (diag) {
-        Check(diag->FramesSubmitted() == kFrames, "IDiagnostics counts the submissions");
-        Check(diag->FramesEncoded() == encoded, "IDiagnostics counts the encodes");
-    }
 
-    // ---- registered submission: the same image, by index ----
-    Ref<IResourceRegistry> registry = Query<IResourceRegistry>(session);
-    if (!registry) {
-        Skip("registered submission", "no resource registry role");
-        return true;
-    }
-
-    bool handle_consumed = false;
-    Expected<ResourceId> registered =
-        registry->RegisterImage(DescribeImage(image), &handle_consumed);
-    if (!registered) {
-        Skip("registered submission", registered.status().detail());
-        return true;
-    }
-    Check(*registered != kNoResource, "an image registers and yields an id");
-
-    // Registering does not encode; submitting by that index does, and it must
-    // reach the encoder without describing the image again.
-    uint32_t registeredEncoded = 0;
-    bool     registeredSubmitOk = true;
+    // ---- a second batch: the drain left the session usable ----
+    uint32_t secondEncoded = 0;
+    bool     secondSubmitOk = true;
     for (uint32_t i = 0; i < 4; ++i) {
         if (!image.WritePattern(kFrames + i, &why)) {
             break;
         }
         FrameSubmit frame;
-        frame.frameId              = 2000 + i;
-        frame.pts                  = (kFrames + i) * 3000;
-        frame.registeredImage = *registered;
-        frame.image.layout         = VK_IMAGE_LAYOUT_PREINITIALIZED;
+        frame.frameId = 2000 + i;
+        frame.pts     = (kFrames + i) * 3000;
+        frame.image   = DescribeImage(image);
 
         Result r = submitter->SubmitFrame(frame);
         if (!r) {
-            Check(false, "SubmitFrame accepts a registered image by index");
+            Check(false, "SubmitFrame accepts a frame after a drain");
             fprintf(stderr, "        detail: %s\n", r.detail());
-            if (diag) {
-                fprintf(stderr, "        diagnostic: %s\n", diag->LastErrorDetail());
-            }
-            registeredSubmitOk = false;
+            secondSubmitOk = false;
             break;
         }
     }
-    if (registeredSubmitOk) {
-        Check(true, "SubmitFrame accepts a registered image by index");
+    if (secondSubmitOk) {
+        Check(true, "SubmitFrame accepts a frame after a drain");
         Check(static_cast<bool>(session->Drain()),
               "Drain leaves the session usable between batches");
         for (uint32_t i = 0; i < 4; ++i) {
@@ -980,78 +778,29 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
             if (!got) {
                 break;
             }
-            ++registeredEncoded;
+            ++secondEncoded;
             bitstream->Release(got->frameId);
         }
-        fprintf(stderr, "        %u registered frames encoded\n", registeredEncoded);
-        Check(registeredEncoded == 4, "every registered frame comes back encoded");
+        fprintf(stderr, "        %u frames of the second batch encoded\n", secondEncoded);
+        Check(secondEncoded == 4, "every frame of the second batch comes back encoded");
     }
 
-    // Completion signalling and reconfiguration, while the session is live.
-    // Both must run BEFORE the stream is ended below: the completion semaphore
-    // dies with it, and a reconfiguration needs a session to reconfigure.
-    TestCompletionSignal(platform, session, fns, image, 4000);
+    // Reconfiguration, while the session is live: it must run BEFORE the
+    // stream is ended below, because a reconfiguration needs a session to
+    // reconfigure.
     TestReconfigure(platform, session, config);
 
-    // An id that was never handed out is refused, not silently encoded. Checked
-    // while the session is live: once the stream has ended every submission is
+    // A frame with no image is refused, not silently encoded. Checked while
+    // the session is live: once the stream has ended every submission is
     // refused, and a refusal for the wrong reason proves nothing.
     {
         FrameSubmit bogus;
-        bogus.frameId         = 3000;
-        bogus.registeredImage = 0xDEADBEEF;
+        bogus.frameId = 3000;
+        bogus.image   = DescribeImage(image);
+        bogus.image.existingImage = VK_NULL_HANDLE;
         const Result refused = submitter->SubmitFrame(bogus);
-        Check(!refused, "an unknown registered id is refused");
-        if (diag) {
-            fprintf(stderr, "        unknown-id refusal: %s\n",
-                    diag->LastErrorDetail());
-        }
-    }
-
-    // WHO CLOSES THE FD.
-    //
-    // Under Borrow the caller keeps its handle and the library works from a
-    // private duplicate, so a failed registration cannot touch it. That is
-    // checkable and is checked.
-    //
-    // Under Transfer the caller must not close, and what becomes of the
-    // descriptor NUMBER is deliberately not asserted here. Past the
-    // vkAllocateMemory handoff the driver owns it -- and owns it even when the
-    // allocation fails -- so the library does not close it and a test that
-    // demanded a closed number would be demanding a double close. Short of
-    // that handoff the library closes it itself. Both are correct; which one
-    // happened is not a property a caller can or should observe.
-    //
-    // The descriptor here is deliberately not importable: the registration
-    // must fail, and the question is only whether the caller's own fd survived.
-    {
-        ExternalImage borrowed = DescribeImage(image);
-        borrowed.handleType    = ExternalHandleType::OpaqueFd;
-        borrowed.existingImage = VK_NULL_HANDLE;
-        borrowed.ownership     = HandleOwnership::Borrow;
-        borrowed.fd            = dup(STDIN_FILENO);
-        if (borrowed.fd >= 0) {
-            Check(!registry->RegisterImage(borrowed),
-                  "an unimportable descriptor is refused");
-            Check(fcntl(borrowed.fd, F_GETFD) != -1,
-                  "a borrowed fd survives a failed registration");
-            close(borrowed.fd);
-        }
-
-        // The echo is written on a refusal too, which is the only path where
-        // a caller cannot infer it from a returned id.
-        bool refused_consumed = true;
-        ExternalImage transferred = DescribeImage(image);
-        transferred.handleType    = ExternalHandleType::OpaqueFd;
-        transferred.existingImage = VK_NULL_HANDLE;
-        transferred.ownership     = HandleOwnership::Transfer;
-        transferred.fd            = dup(STDIN_FILENO);
-        if (transferred.fd >= 0) {
-            Check(!registry->RegisterImage(transferred, &refused_consumed),
-                  "an unimportable descriptor is refused under Transfer too");
-            Check(refused_consumed,
-                  "the ownership echo is written on a refused registration");
-        }
+        Check(!refused, "a frame with no image is refused");
+        fprintf(stderr, "        no-image refusal: %s\n", refused.detail());
     }
 
     // Ending the stream is a real state change, so it is checked rather than
@@ -1072,22 +821,8 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
             after.image   = DescribeImage(image);
             Check(!submitter->SubmitFrame(after),
                   "a submission after the stream ends is refused");
-
-            // The encoder owns the completion semaphore and releases it with
-            // the stream, so the currency degrades to VK_NULL_HANDLE rather
-            // than leaving a caller waiting on a destroyed handle.
-            Ref<ICompletionSignal> completion = Query<ICompletionSignal>(session);
-            if (completion) {
-                Check(completion->CompletionSemaphore() == VK_NULL_HANDLE,
-                      "the completion semaphore is withdrawn once the stream ends");
-            }
         }
     }
-
-    Check(static_cast<bool>(registry->UnregisterImage(*registered)),
-          "a registered image unregisters");
-    Check(!registry->UnregisterImage(kNoResource),
-          "unregistering nothing is refused rather than ignored");
 
     fns.DeviceWaitIdle(binding->Device());
     return true;

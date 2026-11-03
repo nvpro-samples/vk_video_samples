@@ -21,12 +21,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 
-# The PUBLIC API only, like the sibling release-fence and acquire-fd tests: a
-# real device needs no internal seams, and in this case the seam that exists
-# would actively mislead. VkEncProbeLastSubmitSync records at the NULL BACKEND,
-# which sits above the two SetExternalInputFrame* call sites and therefore
-# above the fixed-array assembly this test is about -- it would report the
-# full merged count and pass on a library that truncates.
+# The descriptor API and no internal seam: a real device needs none, and the
+# fixed-array assembly this test is about sits below anything a seam records.
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_STATIC_LIB}
 )
@@ -68,84 +64,33 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
 )
 
-# CTest semantics, matching the siblings: 0 every assertion held, 1 an
+# CTest semantics: 0 every assertion held, 1 an
 # assertion failed, 77 no encode-capable GPU and therefore nothing proved
 # either way -- reported as SKIPPED, never as a pass.
 enable_testing()
 
 # ---------------------------------------------------------------------------
-# THE SUBJECT. Runs on a DIRECT-routed registration (non-LINEAR NV12 declaring
-# VIDEO_ENCODE_SRC), which is the only routing whose submit assembles waits
-# into the fixed 8-slot array.
+# SubmitExternalFrame carries a raw VkImage, and the encoder core routes it
+# from the frame's own format and tiling: an OPTIMAL NV12 frame is directly
+# encodable and its waits land in the fixed 8-slot array.
 #
-# Three cases, and the third is why the first two cannot be satisfied by a fix
-# that simply refuses more work than it likes:
-#   A  capacity+1 caller waits, last one unsignalled -- a surplus wait must not
-#      be silently discarded.
-#   B  capacity caller waits plus an armed acquire fence -- 9 into 8, where the
-#      9th is the imported acquire semaphore because the ext layer appends it
-#      last. The header's "loses neither" promise, at the count nothing tested.
-#   C  capacity-1 caller waits plus an acquire fence -- exactly 8, fits, and
-#      must still be accepted and complete.
-# ---------------------------------------------------------------------------
-add_test(NAME EncoderExtDirectWaitArrayCapacity
-         COMMAND ${PROJECT_NAME})
-set_tests_properties(EncoderExtDirectWaitArrayCapacity PROPERTIES
-                     SKIP_RETURN_CODE 77
-                     LABELS "gpu"
-                     TIMEOUT 900)
-
-# ---------------------------------------------------------------------------
-# THE CONTROL, AND IT IS EVIDENCE RATHER THAN DECORATION.
-#
-# The identical capacity+1 case against a LINEAR/TRANSFER_SRC registration,
-# which routes STAGED onto the std::vector assembly that never truncates. It
-# must report the release fence UNSIGNALLED while the surplus wait is still at
-# 0 -- i.e. the same apparatus, reading a wait that WAS honoured.
-#
-# This is what makes a green subject arm mean something. There is no public or
-# seam accessor for a slot's resolved inputPath, so "did this registration
-# really route DIRECT" cannot be asserted directly; the differential between
-# these two entries is the substitute, and it is also the standing answer to
-# "is this a test that can fail at all".
-# ---------------------------------------------------------------------------
-add_test(NAME EncoderExtDirectWaitArrayCapacityStagedControl
-         COMMAND ${PROJECT_NAME} --staged)
-set_tests_properties(EncoderExtDirectWaitArrayCapacityStagedControl PROPERTIES
-                     SKIP_RETURN_CODE 77
-                     LABELS "gpu"
-                     TIMEOUT 900)
-
-# ---------------------------------------------------------------------------
-# THE LEGACY ENTRY POINT, WHICH REACHES THE SAME FIXED ARRAY BY A DIFFERENT
-# DOOR.
-#
-# SubmitExternalFrame carries a raw VkImage and no registration, so the
-# encoder core routes it from the frame's own format and tiling: an OPTIMAL
-# NV12 frame is directly encodable and its waits land in the same 8-slot
-# array. The registered arms above cannot cover it -- they enter through
-# SubmitRegisteredFrame, which is a different entry point with a different
-# return type and its own bound.
-#
-# The readout here is COMPLETION rather than a release fence, because this
-# entry point refuses any pNext chain and so can carry no fence descriptor.
-# Every wait is pre-signalled, so an accepted frame that never becomes
-# retrievable is a frame that was dropped after its caller was told it was
-# taken -- a success that can only be waited on forever.
+# The readout is COMPLETION. Every wait is pre-signalled, so an accepted frame
+# that never becomes retrievable is a frame that was dropped after its caller
+# was told it was taken -- a success that can only be waited on forever.
 #
 # Three cases, and the outer two are what stop a fix that merely refuses:
 #   3 waits  -- inside capacity, must be accepted AND complete.
 #   9 waits  -- over capacity, must be reported rather than accepted-and-lost,
-#               and reported with the code the public header names.
+#               and reported with the code the header names.
 #   8 waits  -- exactly full, legal input, must still be accepted AND
 #               complete.
 # ---------------------------------------------------------------------------
 #
-# GATED ON VALIDATION, because this arm and its H.265 sibling below are the
-# only arms in the tree that code a B frame. consecutiveBFrames is 2 on the
-# legacy arms and 0 everywhere else, so the encoder builds a bidirectional
-# reference list here and nowhere else, and a spec violation on that path is
-# reported by nothing unless these entries read the layer.
+# GATED ON VALIDATION, because this entry and its H.265 sibling below are the
+# only entries in the tree that code a B frame through the descriptor API.
+# consecutiveBFrames is 2 here, so the encoder builds a bidirectional
+# reference list, and a spec violation on that path is reported by nothing
+# unless these entries read the layer.
 #
 # THE CEILING BELOW NAMES A DEFECT, IT DOES NOT EXCUSE IT:
 #
@@ -154,30 +99,29 @@ set_tests_properties(EncoderExtDirectWaitArrayCapacityStagedControl PROPERTIES
 #       and the full usage set the direct path may view it under, and the
 #       driver reports no video format properties for that combination under
 #       this profile. It is raised once, at the single vkCreateImage this
-#       arm performs.
+#       test performs.
 vvs_add_validation_gated_test(EncoderExtLegacySubmitWaitArrayCapacity
     TARGET ${PROJECT_NAME}
-    ARGS   --legacy
     EXPECT VUID-VkImageCreateInfo-pNext-06811=1)
 set_tests_properties(EncoderExtLegacySubmitWaitArrayCapacity PROPERTIES
                      LABELS "gpu"
                      TIMEOUT 900)
 
 # ---------------------------------------------------------------------------
-# THE SAME ARM UNDER H.265, BECAUSE THE REFERENCE LISTS ARE ASSEMBLED PER
+# THE SAME CASES UNDER H.265, BECAUSE THE REFERENCE LISTS ARE ASSEMBLED PER
 # CODEC.
 #
 # VkVideoEncoderH264 and VkVideoEncoderH265 each fill referenceSlotsInfo[]
 # from their own L0 and L1 walks, in separate files. A B frame exercised
 # through one of them leaves the other's walk unread, so the codec is a
-# parameter of this arm rather than a constant: --h265 selects an H.265
+# parameter of this test rather than a constant: --h265 selects an H.265
 # session and chains VkVideoEncodeH265ProfileInfoKHR on the input image's
-# profile, and everything else about the arm is unchanged.
+# profile, and everything else is unchanged.
 #
 # The ceiling is the same one, for the same reason, and names the same defect.
 vvs_add_validation_gated_test(EncoderExtLegacySubmitWaitArrayCapacityH265
     TARGET ${PROJECT_NAME}
-    ARGS   --legacy --h265
+    ARGS   --h265
     EXPECT VUID-VkImageCreateInfo-pNext-06811=1)
 set_tests_properties(EncoderExtLegacySubmitWaitArrayCapacityH265 PROPERTIES
                      LABELS "gpu"

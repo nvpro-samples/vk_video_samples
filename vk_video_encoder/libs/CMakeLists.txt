@@ -25,13 +25,12 @@ FetchContent_Declare(simdjson
 )
 FetchContent_MakeAvailable(simdjson)
 
-# THE ENCODER'S OS SEAM, selected here and nowhere else. Two translation
-# units carry everything the encoder needs from the host OS -- thread naming
-# and DRM format modifier selection, and the waitable completion handle -- and
-# each has one implementation per platform, chosen by this block. Every
-# implementation begins with an #error guarding its own platform, so a unit
-# selected for the wrong target fails at its first line rather than at a
-# missing symbol during the link.
+# THE ENCODER'S OS SEAM, selected here and nowhere else. One translation
+# unit carries everything the encoder needs from the host OS -- thread naming
+# and DRM format modifier selection -- and has one implementation per
+# platform, chosen by this block. Every implementation begins with an #error
+# guarding its own platform, so a unit selected for the wrong target fails at
+# its first line rather than at a missing symbol during the link.
 #
 # An unsupported target is refused HERE, at configure time, with the port
 # named: a platform with no seam cannot build the encoder, and saying so at
@@ -39,22 +38,16 @@ FetchContent_MakeAvailable(simdjson)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(VK_VIDEO_ENCODER_OS_ADAPTER_SOURCE
         ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterLinux.cpp)
-    set(VK_VIDEO_ENCODER_OS_EVENT_SOURCE
-        ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_os_event_linux.cpp)
 elseif(WIN32)
     set(VK_VIDEO_ENCODER_OS_ADAPTER_SOURCE
         ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterWindows.cpp)
-    set(VK_VIDEO_ENCODER_OS_EVENT_SOURCE
-        ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_os_event_windows.cpp)
 else()
     message(FATAL_ERROR
         "The Vulkan video encoder library has no OS seam implementation for "
-        "${CMAKE_SYSTEM_NAME}. Two translation units implement the seam; a "
-        "port supplies a sibling of each and selects it in this file:\n"
+        "${CMAKE_SYSTEM_NAME}. One translation unit implements the seam; a "
+        "port supplies a sibling of it and selects it in this file:\n"
         "    VkVideoEncoder/VkVideoEncoderOsAdapter<Os>.cpp -- thread naming "
         "and DRM format modifier selection\n"
-        "    src/vulkan_video_encoder_os_event_<os>.cpp -- the waitable "
-        "completion handle\n"
         "Configure with -DBUILD_ENCODER=OFF to build the rest of the tree "
         "without the encoder.")
 endif()
@@ -64,8 +57,6 @@ set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_ext.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../include/vulkan_video_encoder.h
-    ${VK_VIDEO_ENCODER_OS_EVENT_SOURCE}
-    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_os_event_linux.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbPictures.cpp

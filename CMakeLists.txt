@@ -606,36 +606,12 @@ if(BUILD_ENCODER)
 
     if(BUILD_TESTS AND NOT DEFINED DEQP_TARGET)
         add_subdirectory(vk_video_encoder/test/vulkan-video-enc)
-        # Device-free coverage of the ext API's chained-descriptor walk. Links
-        # the static encoder archive for the internal header's test seams.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-sync)
         # Device-free coverage of which VkVideoEncoderConfig members
         # Reconfigure carries, which it refuses, and which it still
         # ignores on purpose. Links the static encoder archive for the
         # internal header's null-backend and capture-push seams, which
         # are what let a Reconfigure call be reached without a device.
         add_subdirectory(vk_video_encoder/test/encoder-ext-reconfigure)
-        # Real-device coverage of the per-frame RELEASE fence export. Skips
-        # (CTest SKIP, exit 77) on a host with no encode-capable GPU.
-        # LINUX-ONLY TESTS, guarded individually below.
-        #
-        # Each reads a POSIX facility as the SUBJECT of the test, not as a
-        # convenience: dlopen for loader adoption, /proc fd enumeration and
-        # dirent for dma-buf fd ownership, unistd for the fd lifetime
-        # assertions. There is no Windows equivalent to assert about, so they
-        # are Linux-only by construction rather than merely unported.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            add_subdirectory(vk_video_encoder/test/encoder-ext-release-fence)
-        endif()
-        # Real-device coverage of the per-frame ACQUIRE fence's fd OWNERSHIP:
-        # that every refusal exit consumes the caller's sync_fd, and that the
-        # success path still consumes it exactly once. Needs a GPU for the
-        # same reason its sibling does -- a real sync_fd needs a real queue
-        # signal to export from, and the success case needs a real import.
-        # Skips (CTest SKIP, exit 77) without one.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            add_subdirectory(vk_video_encoder/test/encoder-ext-acquire-fd)
-        endif()
         # Device-free coverage of the input-format taxonomy (which rung of the
         # adaptation ladder a given format needs), of the preprocess-conversion
         # decision the binder derives from it, and of the transfer-function
@@ -697,52 +673,6 @@ if(BUILD_ENCODER)
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_subdirectory(vk_video_encoder/test/encoder-ext-adopt-device)
         endif()
-        # Real-device coverage of INPUT RESIDENCY on an OS-HANDLE
-        # registration. Every other handleType under
-        # vk_video_encoder/test was ..._VK_IMAGE -- eight registration sites,
-        # zero OPAQUE_FD -- so the entire OS-handle import path, and every
-        # rule the ext layer applies ONLY to an OS handle, had no test of any
-        # kind. The residency read in SubmitRegisteredFrame is exactly such a
-        # rule, and a suite that only registers VK_IMAGE takes its other arm
-        # every time.
-        #
-        # The registration is a SELF-IMPORT: the test exports OPAQUE_FD from
-        # the LIBRARY's own VkDevice and hands the fd straight back to it,
-        # which is what Chromium's shipping CPU staging tier does and which
-        # nothing in this tree did.
-        #
-        # It asserts on a library-side counter
-        # (VkVideoEncoderInputResidencyInfo, added for it), NOT on a
-        # validation-error count, and that is forced rather than preferred:
-        # the two barrier programs the residency decision selects between are
-        # both spec-clean and both leave the image in the same layout, so a
-        # layer-based assertion would be green either way -- a test that
-        # cannot fail. Five entries: the OPAQUE_FD + explicit-LOCAL subject,
-        # a VK_IMAGE control over the IDENTICAL image that makes a red
-        # subject attributable to handleType alone, an explicit FOREIGN and
-        # an AUTO pin that together stop the fix degenerating into "never
-        # acquire", and a mirror of the Chromium tier-3 layout declaration
-        # which PASSES -- the design registered it WILL_FAIL and the hardware
-        # disagreed, so the registration was corrected rather than the
-        # measurement explained away; the suite's own CMakeLists records the
-        # reasoning. Skips (exit 77) without an encode-capable GPU.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            add_subdirectory(vk_video_encoder/test/encoder-ext-input-residency)
-        endif()
-        # Real-device INPUT FORMAT MATRIX. VkEncClassifyInputFormat names
-        # nine formats; whether one REGISTERS, and onto which input path,
-        # is a fact about a device, a session and a descriptor that the
-        # taxonomy table cannot see. This walks all nine plus two excluded
-        # controls against the LIBRARY-OWNED device and asserts both halves
-        # per arm -- the registration status AND the slot's resolved
-        # inputPath, read from VkEncProbeResource rather than inferred from
-        # the config flag, which is equally true of a registration that
-        # resolved to STAGED. Each arm also runs a NEGATIVE control with
-        # its own declaration withheld, so a fix that merely deleted a
-        # refusal fails here. Skips (exit 77) without an encode-capable GPU.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            add_subdirectory(vk_video_encoder/test/encoder-ext-format-matrix)
-        endif()
         add_subdirectory(vk_video_encoder/test/encoder-ext-input-format-query)
         # The v3 interface, driven the way a host drives it: Result and Expected
         # semantics, role discovery, the aliasing reference that keeps a session alive
@@ -756,19 +686,6 @@ if(BUILD_ENCODER)
         add_subdirectory(vk_video_encoder/test/encoder-drain)
         # The device probe's skip-or-fail verdict, without a device.
         add_subdirectory(vk_video_encoder/test/encode-device-probe)
-        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            add_subdirectory(vk_video_encoder/test/encoder-release-fence)
-        endif()
-
-        # The ENCODE half of the same matrix. The routing test above proves a
-        # descriptor registers and a slot resolves; it contains no encode call
-        # at all. This one fills each format with a known primaries pattern,
-        # submits real frames and writes the bitstream out for an INDEPENDENT
-        # decoder to judge -- and abandons a 3-plane row that does not resolve
-        # to FILTER before submitting, because staging one is a measured hang.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            add_subdirectory(vk_video_encoder/test/encoder-ext-format-encode)
-        endif()
 
         # Real-device coverage of the NVIDIA 615.06 dma-buf IMPORT-ORDINAL
         # GUARD, which shipped with a coverage floor of exactly zero: no
@@ -819,45 +736,6 @@ if(BUILD_ENCODER)
         # Skips (exit 77) with no GPU, no dma-buf export, or a non-NVIDIA
         # GPU, where the guard refuses to run by design.
         add_subdirectory(vk_video_encoder/test/encoder-ext-import-ordinal-guard)
-
-        # The same guard's REPORTING CHANNEL, device-free. The suite above
-        # asks whether the retirement is real on hardware; this one asks
-        # whether anything OUTSIDE the library can find out. The guard
-        # used to answer only on stderr, which the shipping Chromium
-        # configuration discards wholesale (silenceStdio), so both of its
-        # failure paths were silent in the one deployment it exists for.
-        # This gates the carrier that replaced that narration:
-        # VkVideoEncoderImportGuardInfo, chainable onto the registration
-        # status echo and onto the completion snapshot. It covers the
-        # CARRIER only. At the shipped default a real dma-buf import on an
-        # NVIDIA device reports DISABLED; COMPLETE and INCOMPLETE are
-        # reachable only on a re-armed build, and belong to the suite above
-        # and to hardware.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-import-guard)
-
-        # The dma-buf import CONTENT probe. The two suites above are about a
-        # RETIRED workaround and what it reported; this one is about a
-        # DETECTOR -- what the driver actually put in the buffer -- and the
-        # distinction decides what a green here means.
-        #
-        # Device-free, and it covers the DECISION: the predicate over every
-        # (Y,U,V) liveness quadrant, the scorer over synthetic NV12 buffers
-        # laid out with the plane offsets, padded row pitch and skipped rows a
-        # real HOST_VISIBLE LINEAR image has, the once-per-REGISTRATION latch,
-        # the oldest-damaged-first report ordering, the drain on retirement,
-        # and VkVideoEncoderImportContentInfo on both of its chain points.
-        #
-        # It does NOT cover whether the probe fires on a buffer NVIDIA 615.06
-        # really poisoned; that needs the broken driver and a real GBM dma-buf
-        # import, and is proven on hardware or not at all. What it buys is
-        # that the part which would otherwise be exercised only on the one
-        # host with the broken driver is regression-tested everywhere. The
-        # predicate is asserted quadrant by quadrant rather than spot-checked
-        # because the CHROMA-ONLY version of it has produced a wrong
-        # conclusion on this defect twice, and a fully legal black frame
-        # (Y=16, U=V=128) is asserted CLEAN because that is the false positive
-        # that would reroute working buffers.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-import-content)
 
         # H.264 Baseline must not emit CABAC. profile_idc 66 covers Baseline
         # and Constrained Baseline alike and neither admits CABAC:

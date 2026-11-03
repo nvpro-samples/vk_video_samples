@@ -48,7 +48,7 @@
  *     there is no embedder device to confuse it with, because this test
  *     deliberately never creates one.
  *
- *  2. IT ENCODES. Registration, submit and bitstream capture over a real
+ *  2. IT ENCODES. Submit and bitstream capture over a real
  *     queue on the library-created device. An ADOPT path that stands a device
  *     up and then cannot encode on it is not an embedding path at all.
  *
@@ -338,8 +338,8 @@ struct InputImage {
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
-// A host-written LINEAR NV12 image, on the LIBRARY's device, registered as
-// TRANSFER_SRC so the registration routes STAGED. Staged is the right arm
+// A host-written LINEAR NV12 image, on the LIBRARY's device, with
+// TRANSFER_SRC usage only, so each frame routes STAGED. Staged is the right arm
 // here: it is the one that copies through a real queue on the device under
 // test, so a device that came up but cannot actually submit work shows up.
 bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
@@ -379,12 +379,11 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
     }
     if (typeIndex == UINT32_MAX) {
         std::printf("  ERROR: no host-visible memory type\n");
-        // Same lifetime rule as the registration exit in EncodeAndDrain: the
-        // image already exists on the library's device, and main() answers
-        // this false by resetting the encoder, which destroys that device. A
-        // live VkImage at that point is a vkDestroyDevice VUID violation --
-        // and unlike the registration exit, THIS one legitimately stays a
-        // skip, so the violation would ride out on a green run.
+        // The image already exists on the library's device, and main()
+        // answers this false by resetting the encoder, which destroys that
+        // device. A live VkImage at that point is a vkDestroyDevice VUID
+        // violation -- and this exit is a skip, so the violation would ride
+        // out on a green run.
         fns.DestroyImage(device, out->image, nullptr);
         out->image  = VK_NULL_HANDLE;
         out->memory = VK_NULL_HANDLE;
@@ -461,132 +460,32 @@ bool EncodeAndDrain(VkSharedBaseObj<VulkanVideoEncoderExt>& encoder,
         return false;
     }
 
-    VkVideoEncoderExternalImageDescriptor desc = {};
-    desc.sType =
-        VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR;
-    desc.handleType    = VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_VK_IMAGE;
-    desc.format        = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-    desc.width         = kWidth;
-    desc.height        = kHeight;
-    desc.tiling        = VK_IMAGE_TILING_LINEAR;
-    desc.imageUsage    = (VkImageUsageFlags)VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    desc.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-    desc.planeCount    = 0;
-    desc.residency     = VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;
-    desc.defaultLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-    desc.existingImage = input.image;
-
-    VkVideoEncoderResource resource = VK_VIDEO_ENCODER_RESOURCE_NULL;
-    const VkVideoEncoderStatusCode regStatus =
-        encoder->RegisterImageResource(desc, 0, &resource, nullptr);
-    if ((regStatus != VK_VIDEO_ENCODER_STATUS_SUCCESS) ||
-        (resource == VK_VIDEO_ENCODER_RESOURCE_NULL)) {
-        // AN ASSERTION, NOT A SKIP.
-        //
-        // A refusal reaching this line is a LIBRARY answer, not a HOST
-        // condition, so it must not take `return false`: this function's
-        // contract maps that to "infrastructure failure" and main() maps it to
-        // `return 77` -- ctest Skipped, which does not fail a run, and a
-        // library refusal that does not fail a run is not asserted at all.
-        // FIVE of the seven registered
-        // arms reach this line (the two --*conflict arms refuse earlier), so
-        // a registration regression could turn this whole suite green by
-        // skipping it, and an ADOPT-only regression would skip the three
-        // adoption arms while the two OWN controls stayed green -- destroying
-        // the exact comparison this test exists to make.
-        //
-        // The host-capability question was already settled ABOVE, and that is
-        // what makes the reclassification honest rather than merely stricter:
-        // CreateInputImage builds this very LINEAR NV12 image on this very
-        // device, and ITS failure is still the skip. By the time control
-        // reaches this line the device has demonstrably created the image we
-        // are handing straight back to the library.
-        //
-        // ON THIS DESCRIPTOR THE REGISTRATION MAKES NO DEVICE CALL AT ALL,
-        // which is what makes the reclassification safe rather than merely
-        // defensible. BuildRegisteredViewLocked looks like the device-facing
-        // step and is not, for this input: CreateFromExternal and
-        // VulkanVideoImagePoolNode::CreateExternal are plain allocations with
-        // no Vulkan entry point, and the combined image view is SKIPPED --
-        // VkImageResource declines to create a view over an image whose usage
-        // holds no view-compatible bit (VUID-VkImageViewCreateInfo-image-04441)
-        // and this descriptor declares VK_IMAGE_USAGE_TRANSFER_SRC_BIT alone,
-        // while the per-plane views additionally need
-        // VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, which it does not set. So every
-        // refusal reachable from here -- descriptor validation, the 4096-slot
-        // resource limit, a null existingImage -- is decided in library code
-        // before the driver is touched.
-        //
-        // ONE GENUINE DEVICE-DEPENDENT REFUSAL EXISTS, and it is named rather
-        // than hidden: the descriptor extent must cover the session's coded
-        // extent, and InitializeExt clamps encodeWidth/encodeHeight UP to
-        // videoCapabilities.minCodedExtent. A device reporting a minCodedExtent
-        // larger than this test's image would raise the session above it and
-        // refuse EXTENT_INVALID. No real encode hardware does; if one ever
-        // does, this line is where it will announce itself, which is better
-        // than a silent skip.
-        //
-        // The same file already makes this argument three times, for context
-        // creation, for CreateVulkanVideoEncoderExtOnContext, and for
-        // InitializeExt(ADOPT). This site APPLIES IT MORE BROADLY than any of
-        // them, which is worth saying rather than leaving to be noticed: the
-        // first two exist only on the --context* arms, and the third
-        // explicitly carves the OWN arms back out into a skip. This line is
-        // reached by --own and --own-validate too. That widening is
-        // deliberate -- by here InitializeExt has already SUCCEEDED on every
-        // arm, so "can this host encode?" is settled and a refusal can no
-        // longer be answering it.
-        // Status only: the resource half would be a constant. |resource| is
-        // initialised to VK_VIDEO_ENCODER_RESOURCE_NULL right here in the
-        // test, and a SUCCESS return can never overwrite it with 0
-        // (MakeResourceId ORs index + 1), so inside this branch it is always
-        // 0 and reporting it says nothing. (The library also zeroes
-        // *outResource itself, but only after three earlier returns, so that
-        // is not what makes this safe -- the initialiser above is.)
-        Check(false, "RegisterImageResource(VK_IMAGE)",
-              "status " + I64((long long)regStatus));
-
-        // Unwind the input image on this exit too. InputImage is a plain POD
-        // with no destructor and only the success path at the bottom of this
-        // function frees it, so the old `return false` leaked both handles --
-        // and then main() reset the encoder, destroying the library-created
-        // VkDevice while one of its images was still live. That is a
-        // vkDestroyDevice VUID violation (every child object must be
-        // destroyed first). Only --own-validate could ever have reported it:
-        // BuildEmbedder is called with withValidationLayer=false on every arm
-        // including --validate, deliberately, so the borrowed instance carries
-        // no layer and only the arm where the LIBRARY creates the instance has
-        // one live.
-        if (input.image != VK_NULL_HANDLE) {
-            fns.DestroyImage(device, input.image, nullptr);
-        }
-        if (input.memory != VK_NULL_HANDLE) {
-            fns.FreeMemory(device, input.memory, nullptr);
-        }
-        *framesOut = 0;
-        *bytesOut  = 0;
-        // TRUE: the contract this function documents is "false means SKIP",
-        // and this is not one. main() goes on to fail `frames > 0` and
-        // `bytes > 0` as well, which is accurate -- nothing encoded.
-        return true;
-    }
-
     uint32_t captured  = 0;
     uint64_t bytes     = 0;
     uint32_t submitted = 0;
+    // THE LAYOUT A FRAME DECLARES IS THE ONE THE IMAGE IS IN. The image is
+    // created PREINITIALIZED, so its first frame declares that. The encoder
+    // hands a staged image back in the layout the frame declared, or in
+    // GENERAL where that layout is not one a barrier may transition to --
+    // PREINITIALIZED is not -- so once a frame has been accepted the image is
+    // in GENERAL, and every later frame declares GENERAL.
+    VkImageLayout imageLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
     for (uint32_t f = 0; f < kFrames; f++) {
-        VkVideoEncoderFrameSubmitInfo info = {};
-        info.sType         = VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_PARAMS;
-        info.resource      = resource;
-        info.frameId       = f;
-        info.pts           = f;
-        info.qpOverride    = -1;
-        info.currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VkVideoEncodeInputFrame frame = {};
+        frame.sType          = VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_FRAME;
+        frame.image          = input.image;
+        frame.format         = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+        frame.width          = kWidth;
+        frame.height         = kHeight;
+        frame.imageTiling    = VK_IMAGE_TILING_LINEAR;
+        frame.currentLayout  = imageLayout;
+        frame.inputResidency = VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;
+        frame.frameId        = f;
+        frame.pts            = f;
+        frame.qpOverride     = -1;
 
-        VkVideoEncoderStatusCode status =
-            encoder->SubmitRegisteredFrame(info, nullptr);
-        for (int retry = 0;
-             (status == VK_VIDEO_ENCODER_STATUS_NOT_READY) && (retry < 2000);
+        VkResult status = encoder->SubmitExternalFrame(frame, nullptr);
+        for (int retry = 0; (status == VK_NOT_READY) && (retry < 2000);
              retry++) {
             VkVideoEncodeResult drained;
             while (encoder->AcquireNextEncodedFrame(drained) == VK_SUCCESS) {
@@ -594,17 +493,18 @@ bool EncodeAndDrain(VkSharedBaseObj<VulkanVideoEncoderExt>& encoder,
                 bytes += drained.bitstreamSize;
                 encoder->ReleaseEncodedFrame(drained.frameId);
             }
-            status = encoder->SubmitRegisteredFrame(info, nullptr);
-            if (status == VK_VIDEO_ENCODER_STATUS_NOT_READY) {
+            status = encoder->SubmitExternalFrame(frame, nullptr);
+            if (status == VK_NOT_READY) {
                 struct timespec ts = {0, 1000000};  // 1 ms
                 nanosleep(&ts, nullptr);
             }
         }
-        if (status != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            Check(false, "SubmitRegisteredFrame",
+        if (status != VK_SUCCESS) {
+            Check(false, "SubmitExternalFrame",
                   "frame " + I64(f) + " status " + I64((long long)status));
             break;
         }
+        imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         submitted++;
 
         VkVideoEncodeResult drained;
@@ -661,32 +561,6 @@ bool EncodeAndDrain(VkSharedBaseObj<VulkanVideoEncoderExt>& encoder,
         }
     }
 
-    // UNREGISTER BEFORE DESTROYING, which is the order the public header
-    // requires in as many words: "the caller must Unregister BEFORE
-    // destroying it -- a driver may recycle the handle value, and a surviving
-    // registration would then name freed memory". This call was simply
-    // missing; the test destroyed the image with the registration still live.
-    //
-    // NOT a bare call: this whole change exists because a library status was
-    // being thrown away, so throwing this one away would be the same mistake
-    // one screen further down. Unregister answers RESOURCE_UNKNOWN if the id
-    // does not resolve, which is precisely the generation/slot regression
-    // worth catching.
-    //
-    // Its detection power is bounded and the bound is worth knowing: the
-    // deferred arm sets slot.retired without clearing slot.live, so a lookup
-    // still succeeds and even a repeat Unregister answers SUCCESS -- which
-    // does not match the header's "The id is invalid immediately on return".
-    // That is a pre-existing library/header mismatch, not this test's to fix,
-    // but it is why this assertion proves the id RESOLVED, not that the slot
-    // retired.
-    //
-    // No null guard: |resource| is initialised non-null above and the only
-    // branch that could leave it null already returned, so a guard here would
-    // just tell a reader that null is reachable when it is not.
-    Check(encoder->UnregisterImageResource(resource) ==
-              VK_VIDEO_ENCODER_STATUS_SUCCESS,
-          "UnregisterImageResource", "the registration id did not resolve");
     if (input.image != VK_NULL_HANDLE) {
         fns.DestroyImage(device, input.image, nullptr);
     }
@@ -788,7 +662,6 @@ void CheckInputFormatEnumerator(VulkanVideoEncoderContext* ctx,
     std::printf("  %s advertises %u input format(s):\n", label, fetched);
     uint32_t direct = 0;
     uint32_t converted = 0;
-    bool orderHeld = true;
     for (uint32_t i = 0; i < fetched; i++) {
         const VkVideoEncoderInputFormatProperties& e = entries[i];
         const bool isDirect =
@@ -801,10 +674,6 @@ void CheckInputFormatEnumerator(VulkanVideoEncoderContext* ctx,
                   " names " + I64((long long)e.encodeFormat));
         if (isDirect) {
             direct++;
-            // Ordering contract: every entry the device takes unconverted
-            // precedes every filtered one, so a caller reading top-down sees
-            // the free tier first.
-            orderHeld = orderHeld && (converted == 0);
         } else {
             converted++;
         }
@@ -816,53 +685,24 @@ void CheckInputFormatEnumerator(VulkanVideoEncoderContext* ctx,
                       I64((long long)e.format) + " twice");
         }
     }
-    Check(orderHeld, "the direct entries come before the filtered ones",
-          std::string(label) + ": a direct entry follows a filtered one");
     Check(direct > 0u,
           "at least one advertised format is taken by the device unconverted",
           std::string(label) + ": no direct entry");
 
-    // THE SUBSTANCE OF THE ADVERTISEMENT. A list that were the device's own
-    // VIDEO_ENCODE_SRC set reduced to what the library routes would carry
-    // direct entries only -- no driver reports an RGBA encode source. An RGB
-    // producer learns from this list that it may hand RGBA over, and what
-    // that becomes.
-    bool rgbaAdvertised = false;
-    for (uint32_t i = 0; i < fetched; i++) {
-        const VkVideoEncoderInputFormatProperties& e = entries[i];
-        if (e.format == VK_FORMAT_R8G8B8A8_UNORM) {
-            rgbaAdvertised = true;
-            Check((e.optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL) &&
-                      (e.encodeFormat != VK_FORMAT_R8G8B8A8_UNORM),
-                  "RGBA8 is advertised as FILTERED, and names what it becomes",
-                  std::string(label) + ": it claims to be direct");
-        }
-    }
-    Check(rgbaAdvertised && (converted > 0u),
-          "the list carries the formats the library CONVERTS, not only the "
-          "ones the device takes",
-          std::string(label) + ": " + I64((long long)converted) +
-              " filtered entries, RGBA8 " +
-              (rgbaAdvertised ? "present" : "absent"));
-
-    // THE 12-BIT PAIR, stated as an implication rather than as a fact about
-    // this host. I420-12 and P012 both convert into P012, so either both are
-    // advertised -- where the device takes P012 as an encode source -- or
-    // neither is.
-    bool i420_12 = false;
-    bool p012 = false;
+    // NOTHING THAT NEEDS THE COMPUTE FILTER IS ADVERTISED. A submitted frame
+    // is read directly or copied, so a format only the filter could convert
+    // -- RGBA, a three-plane layout -- is not an input this list may offer.
+    bool filterFormat = false;
     for (uint32_t i = 0; i < fetched; i++) {
         const VkFormat fmt = entries[i].format;
-        i420_12 = i420_12 ||
-                  (fmt == VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16);
-        p012 = p012 ||
-               (fmt == VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16);
+        filterFormat = filterFormat || (fmt == VK_FORMAT_R8G8B8A8_UNORM) ||
+                       (fmt == VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM) ||
+                       (fmt == VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16);
     }
-    Check(i420_12 == p012,
-          "I420-12 and P012 are advertised together: they share a conversion "
-          "target, so one device answer decides both",
-          std::string(label) + ": I420-12 " + (i420_12 ? "in" : "out") +
-              ", P012 " + (p012 ? "in" : "out"));
+    Check((converted == 0u) && !filterFormat,
+          "the list carries only formats the encoder reads directly",
+          std::string(label) + ": " + I64((long long)converted) +
+              " filtered entries" + (filterFormat ? ", a filter format" : ""));
 
     // A SHORT BUFFER IS REPORTED, NOT SILENTLY TRUNCATED. This is the whole
     // difference between a two-call query and a fixed-capacity member: the

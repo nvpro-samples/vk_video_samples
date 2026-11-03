@@ -19,8 +19,7 @@
  *
  * The encoder core carries no OS-specific code -- no <sys/eventfd.h>, no
  * <windows.h>, no poll/epoll. Everything OS-conditional it needs is declared
- * here in platform-neutral terms, and is the core-layer counterpart of the
- * ext layer's vulkan_video_encoder_os_event_linux seam.
+ * here in platform-neutral terms.
  *
  * These declarations are portable; the implementations are not. Exactly one
  * implementation translation unit is compiled per platform and the build
