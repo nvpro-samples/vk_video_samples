@@ -287,7 +287,7 @@ public:
         image.width         = m_width;
         image.height        = m_height;
         image.tiling        = VK_IMAGE_TILING_LINEAR;
-        image.layout        = VK_IMAGE_LAYOUT_PREINITIALIZED;
+        image.layout        = m_layout;
         image.colorModel    = vk::video::enc::ColorModel::YCbCr;
         image.usage         = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         image.createFlags   = 0;
@@ -295,6 +295,14 @@ public:
         image.allocationSize = m_size;
         return image;
     }
+
+    // THE LAYOUT A FRAME DECLARES IS THE ONE THE IMAGE IS IN. The image is
+    // created PREINITIALIZED, so its first frame declares that. The encoder
+    // hands a staged image back in the layout the frame declared, or in
+    // GENERAL where that layout is not one a barrier may transition to --
+    // PREINITIALIZED is not -- so once a frame has been accepted the image is
+    // in GENERAL, and every later frame declares GENERAL.
+    void MarkSubmitted() { m_layout = VK_IMAGE_LAYOUT_GENERAL; }
 
     VkImage Image() const { return m_image; }
 
@@ -307,6 +315,7 @@ private:
     VkImage          m_image  = VK_NULL_HANDLE;
     VkDeviceMemory   m_memory = VK_NULL_HANDLE;
     uint64_t         m_size   = 0;
+    VkImageLayout    m_layout = VK_IMAGE_LAYOUT_PREINITIALIZED;
 };
 
 //=============================================================================
@@ -328,10 +337,7 @@ struct Session {
     vk::video::enc::Ref<vk::video::enc::IEncoderSession>    session;
     vk::video::enc::Ref<vk::video::enc::IFrameSubmitter>    submitter;
     vk::video::enc::Ref<vk::video::enc::IBitstreamSource>   bitstream;
-    vk::video::enc::Ref<vk::video::enc::ICompletionSignal>  completion;
-    vk::video::enc::Ref<vk::video::enc::IResourceRegistry>  registry;
     vk::video::enc::Ref<vk::video::enc::IDeviceBinding>     binding;
-    vk::video::enc::Ref<vk::video::enc::IDiagnostics>       diagnostics;
 
     Opened Open(uint32_t width, uint32_t height, const char** why)
     {
@@ -366,14 +372,11 @@ struct Session {
         if (!opened) {
             return NotOpened(opened.status().detail(), why);
         }
-        session     = *opened;
-        submitter   = Query<IFrameSubmitter>(session);
-        bitstream   = Query<IBitstreamSource>(session);
-        completion  = Query<ICompletionSignal>(session);
-        registry    = Query<IResourceRegistry>(session);
-        binding     = Query<IDeviceBinding>(session);
-        diagnostics = Query<IDiagnostics>(session);
-        if (!submitter || !bitstream || !registry || !binding) {
+        session   = *opened;
+        submitter = Query<IFrameSubmitter>(session);
+        bitstream = Query<IBitstreamSource>(session);
+        binding   = Query<IDeviceBinding>(session);
+        if (!submitter || !bitstream || !binding) {
             *why = "the session does not offer the roles a test needs";
             return Failed;
         }

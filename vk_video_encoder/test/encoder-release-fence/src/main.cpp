@@ -187,7 +187,12 @@ int main(int argc, const char** argv)
         return report.Summarise("encoder-release-fence");
     }
 
-    Expected<ResourceId> registered = s.registry->RegisterImage(image.Describe());
+    Ref<IResourceRegistry> registry = Query<IResourceRegistry>(s.session);
+    if (!registry) {
+        report.Check(false, "the session offers IResourceRegistry");
+        return report.Summarise("encoder-release-fence");
+    }
+    Expected<ResourceId> registered = registry->RegisterImage(image.Describe());
     if (!registered) {
         report.Check(false, registered.status().detail());
         return report.Summarise("encoder-release-fence");
@@ -309,7 +314,7 @@ int main(int argc, const char** argv)
     for (int fd : fences) {
         close(fd);
     }
-    s.registry->UnregisterImage(*registered);
+    registry->UnregisterImage(*registered);
     fns.DeviceWaitIdle(s.binding->Device());
     gate.Destroy();
     image.Destroy();
