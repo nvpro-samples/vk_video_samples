@@ -285,7 +285,9 @@ enum class TuningMode : uint32_t {
     Lossless,
 };
 
-// How the library obtains an input image the caller already owns.
+// How the library obtains an input image the caller already owns. OpaqueFd
+// and DmaBuf are imported from ExternalImage::fd; every other value names an
+// image already on the session's device, in ExternalImage::existingImage.
 enum class ExternalHandleType : uint32_t {
     NoHandle = 0,
     OpaqueFd,
@@ -477,9 +479,14 @@ struct PlaneLayout {
 
 enum { kMaxPlanes = 4 };
 
-// Who owns an OS handle described in an ExternalImage.
+// Who owns the fd of an fd-backed ExternalImage once SubmitFrame returns.
 enum class HandleOwnership : uint32_t {
+    // The library takes the fd. It is closed on every refusal, NotReady
+    // included, and on success it belongs to the imported memory. The caller
+    // never closes it.
     Transfer = 0,
+    // The fd stays the caller's: the library imports a duplicate and never
+    // closes the caller's fd.
     Borrow,
 };
 
@@ -495,19 +502,50 @@ enum class Residency : uint32_t {
     Foreign,
 };
 
-// An image the caller already owns.
+// An image the caller already owns, in one of two forms.
 //
-// IFrameSubmitter::SubmitFrame reads existingImage -- a VkImage on the
-// device the session runs on (IDeviceBinding::Device()) -- and its format,
-// width, height, tiling and layout. The encoder reads that image directly,
-// or copies it into an image it can encode when the tiling, the extent or
-// the layout calls for that. The remaining fields describe the image and
-// its allocation; SubmitFrame does not read them, and it neither takes nor
-// closes an OS handle.
+// AN IMAGE ON THE SESSION'S DEVICE (handleType VkImageHandle, or any type
+// other than OpaqueFd and DmaBuf). SubmitFrame reads existingImage -- a
+// VkImage on the device the session runs on (IDeviceBinding::Device()) --
+// and its format, width, height, tiling and layout. The encoder reads that
+// image directly, or copies it into an image it can encode when the tiling,
+// the extent or the layout calls for that. No OS handle is taken or closed.
+//
+// AN fd-BACKED IMAGE (handleType OpaqueFd or DmaBuf). SubmitFrame imports fd
+// onto the session's device, as an image created exactly as described here,
+// and encodes the frame from it; existingImage is not read. The description
+// is the exporter's own and nothing in it is guessed:
+//   * format, width, height, tiling, usage and createFlags are the
+//     VkImageCreateInfo the exporter used. usage must include TRANSFER_SRC
+//     for a LINEAR image, and TRANSFER_SRC or VIDEO_ENCODE_SRC otherwise.
+//   * A DRM format modifier is stated with hasDrmFormatModifier,
+//     drmFormatModifier, tiling VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT and
+//     one planeLayouts entry (offset, rowPitch) per memory plane of the
+//     modifier; only a DmaBuf carries one.
+//   * allocationSize is the exporter's allocation size; memoryTypeIndex
+//     (OpaqueFd) is the exporter's memory type, and memoryTypeBits narrows
+//     the choice when the index is not known.
+//   * A non-zero deviceUUID, or a valid deviceLUID, must name the session's
+//     device; a non-zero driverUUID must name its driver on OpaqueFd.
+//   * layout is the layout the exporter left the memory in, and residency
+//     says whether the encoder acquires it from VK_QUEUE_FAMILY_FOREIGN_EXT:
+//     Auto reads as Foreign for an fd.
+//   * ownership decides the fd's fate; see HandleOwnership. An ownership
+//     value outside that enumeration is refused with the fd left open.
+// A description the device cannot import is refused with a Result naming
+// what is wrong, and the refusal follows ownership like any other.
+//
+// THE IMPORT IS PER FRAME. Each SubmitFrame imports its own image, which
+// lives exactly as long as the encoder reads it: it is destroyed once the
+// frame's input has been consumed -- the command buffers that read it have
+// completed -- or when the session is released. An exporter reuses its
+// allocation for a later frame once the frame's signal semaphores have
+// signalled, and exports a new fd for every submission under Transfer.
 struct ExternalImage {
     ExternalHandleType handleType = ExternalHandleType::NoHandle;
 
-    // The OS handle, or the Vulkan image when handleType is VkImageHandle.
+    // The fd when handleType is OpaqueFd or DmaBuf; the Vulkan image
+    // otherwise.
     int      fd            = -1;
     void*    win32Handle   = nullptr;
     VkImage  existingImage = VK_NULL_HANDLE;
@@ -743,6 +781,11 @@ public:
 
     // Submit one frame. Returns once the work is queued, not once it is
     // encoded; the frame is complete when it reaches FrameState::Ready.
+    //
+    // An fd-backed image (ExternalImage) is imported here, and its fd
+    // follows ExternalImage::ownership whatever this returns -- including
+    // NotReady, which under Transfer has consumed the fd: a caller that
+    // retries exports a new one.
     virtual Result SubmitFrame(const FrameSubmit& frame) = 0;
 
     // Drop a submitted frame that has not been encoded yet. A frame already

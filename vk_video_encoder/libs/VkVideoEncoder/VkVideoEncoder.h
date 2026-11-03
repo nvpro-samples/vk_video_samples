@@ -269,6 +269,11 @@ public:
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> qpMapCmdBuffer;
         /** Per-frame PSNR capture/recon data (only used when PSNR is enabled). */
         VkVideoEncoderPsnr::FrameData                      psnrFrameData;
+        /** The owner of an input image the ext layer imported for THIS
+         *  frame, or null. Released by Reset(true) after the frame's command
+         *  buffers have completed and after the views over the image, so
+         *  the image outlives every submission that reads it. */
+        VkSharedBaseObj<VkVideoRefCountBase>               externalInputOwner;
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
         std::shared_ptr<AqProcessor>                       aqProcessorSlot;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
@@ -601,6 +606,7 @@ public:
                 videoSessionParameters = nullptr;
                 srcStagingImageView = nullptr;
                 srcEncodeImageResource = nullptr;
+                externalInputOwner = nullptr;
                 setupImageResource = nullptr;
                 // A frame's quantization map belongs to that frame: a recycled node takes
                 // (and fills) a new one, from the map file or from the NVIDIA AQ map library.
