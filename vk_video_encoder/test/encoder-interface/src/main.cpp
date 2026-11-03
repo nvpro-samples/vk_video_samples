@@ -380,8 +380,17 @@ public:
         }
     }
 
-    VkImage  Image() const { return m_image; }
-    uint64_t Size()  const { return m_size; }
+    // THE LAYOUT A FRAME DECLARES IS THE ONE THE IMAGE IS IN. The image is
+    // created PREINITIALIZED, so its first frame declares that. The encoder
+    // hands a staged image back in the layout the frame declared, or in
+    // GENERAL where that layout is not one a barrier may transition to --
+    // PREINITIALIZED is not -- so once a frame has been accepted the image is
+    // in GENERAL, and every later frame declares GENERAL.
+    void MarkSubmitted() { m_layout = VK_IMAGE_LAYOUT_GENERAL; }
+
+    VkImage       Image()  const { return m_image; }
+    uint64_t      Size()   const { return m_size; }
+    VkImageLayout Layout() const { return m_layout; }
 
 private:
     const DeviceFns& m_fns;
@@ -390,6 +399,7 @@ private:
     VkImage          m_image  = VK_NULL_HANDLE;
     VkDeviceMemory   m_memory = VK_NULL_HANDLE;
     uint64_t         m_size   = 0;
+    VkImageLayout    m_layout = VK_IMAGE_LAYOUT_PREINITIALIZED;
 };
 
 // Describe a created image to the interface.
@@ -402,7 +412,7 @@ ExternalImage DescribeImage(const HostImage& image)
     described.width         = kWidth;
     described.height        = kHeight;
     described.tiling        = VK_IMAGE_TILING_LINEAR;
-    described.layout        = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    described.layout        = image.Layout();
     described.colorModel    = ColorModel::YCbCr;
     // Must match vkCreateImage exactly: the library cannot read these back
     // from a VkImage handle and uses them to decide how to reach the encoder.
@@ -884,6 +894,7 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
             submitOk = false;
             break;
         }
+        image.MarkSubmitted();
     }
     if (!submitOk) {
         return true;   // a real failure, already counted
@@ -1047,10 +1058,9 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
     // assumed: a submission after the last frame is refused.
     {
         FrameSubmit last;
-        last.frameId              = 2999;
-        last.registeredImage = *registered;
-        last.image.layout         = VK_IMAGE_LAYOUT_PREINITIALIZED;
-        last.isLastFrame          = true;
+        last.frameId     = 2999;
+        last.image       = DescribeImage(image);
+        last.isLastFrame = true;
         if (submitter->SubmitFrame(last)) {
             Check(static_cast<bool>(session->Finish()), "Finish ends the stream");
             Expected<EncodedFrame> tail = bitstream->AcquireNext();
@@ -1058,9 +1068,8 @@ bool TestFrameTransfer(const Ref<IEncoderPlatform>& platform,
                 bitstream->Release(tail->frameId);
             }
             FrameSubmit after;
-            after.frameId              = 3001;
-            after.registeredImage = *registered;
-            after.image.layout         = VK_IMAGE_LAYOUT_PREINITIALIZED;
+            after.frameId = 3001;
+            after.image   = DescribeImage(image);
             Check(!submitter->SubmitFrame(after),
                   "a submission after the stream ends is refused");
 
