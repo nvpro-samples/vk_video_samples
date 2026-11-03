@@ -194,6 +194,27 @@
       "known": []
     },
     {
+      "name": "h264-ibbbp-keep16",
+      "args": [
+        "--frames",
+        "128",
+        "--gop",
+        "16",
+        "--idr",
+        "200",
+        "--bframes",
+        "3",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1",
+        "--max-num-ref-frames",
+        "16"
+      ],
+      "golden": "../golden/h264-ibbbp-keep16.trace",
+      "known": []
+    },
+    {
       "name": "h264-ippp-4ref-4slots",
       "args": [
         "--frames",

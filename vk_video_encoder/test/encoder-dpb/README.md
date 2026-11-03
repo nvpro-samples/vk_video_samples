@@ -36,7 +36,8 @@ would decide.
 
 ```bash
 <build>/bin/vk-video-encoder-dpb-trace --codec h264 --frames 64 --gop 16 --idr 60 --bframes 3 \
-    --refs-l0 2 --refs-l1 1 [--closed-gop] [--level-dpb 16] [--max-dpb-slots 17] -o h264.trace
+    --refs-l0 2 --refs-l1 1 [--closed-gop] [--max-num-ref-frames 16] [--level-dpb 16] [--max-dpb-slots 17] \
+    -o h264.trace
 <build>/bin/vk-video-encoder-dpb-trace --codec av1 --frames 48 --gop 16 --idr 60 --bframes 3 \
     [--max-active-refs 7] [--av1-single 7:0x7f] [--av1-unidir 4:4:0xf] [--av1-bidir 7:4:3:0x7f] \
     [--av1-cdf-only 1] -o av1.trace
@@ -46,7 +47,9 @@ python3 scripts/encoder_dpb_suite.py --tool <build>/bin/vk-video-encoder-dpb-tra
 
 `--refs-l0` and `--refs-l1` stand for the driver's preferred reference counts
 (`preferredMaxL0ReferenceCount`, `preferredMaxL1ReferenceCount`), which set the H.264 and H.265
-encoders' counts; `--level-dpb` is the H.264 DPB size the level allows for the picture size.
+encoders' counts; `--max-num-ref-frames` is the H.264 encoder's `--maxNumRefFrames`, the reference
+frames its DPB keeps when more than those counts; `--level-dpb` is the H.264 DPB size the level allows
+for the picture size.
 `--max-dpb-slots` is the device's `maxDpbSlots` (17). For AV1, `--max-active-refs` is the device's
 `maxActiveReferencePictures` (7), and `--av1-single`, `--av1-unidir` and `--av1-bidir` its reference
 capabilities, the counts (`N`, group 1 `G1`, group 2 `G2`) and the name mask of each prediction
@@ -67,7 +70,7 @@ Where the encoder feeds the DPB, the harness does what the encoder does, line by
   `EncoderConfigH265::InitDpbCount`, `InitializeSpsRefPicSet` and the reference fields of
   `InitParamameters`; `EncoderConfigAV1::InitDpbCount` and `InitSequenceHeader`; and the DPB size
   `VkVideoEncoder::InitEncoder` gives the session, the DPB context and the parameter sets (as
-  `dpbCount`), at most 16 and at most the device's `maxDpbSlots`;
+  `dpbCount`), at most the device's `maxDpbSlots`;
 - the order: each input frame takes its GOP position (`VkVideoGopStructure::GetPositionInGOP`),
   and `VkVideoEncoder::EnqueueFrame` and `InsertOrdered` defer it in GOP encode order until an
   IDR, the last frame, a reference frame or a GOP without B frames flushes the queue;

@@ -60,6 +60,8 @@ struct Settings {
     bool closedGop = false;
     uint32_t refsL0 = 1;
     uint32_t refsL1 = 1;
+    // H.264: the encoder's --maxNumRefFrames, 0 when not given.
+    uint32_t maxNumRefFrames = 0;
     // H.264: the DPB size the level allows for the picture size (levelLimits[].maxDPB), at most 16.
     uint32_t levelDpbSize = 16;
     // The device's VkVideoCapabilitiesKHR::maxDpbSlots.
@@ -176,17 +178,17 @@ struct Owners {
 class H264Driver : public CodecDriver {
    public:
     H264Driver(const Settings& settings, const VkVideoGopStructure& gop, FILE* out) : m_out(out) {
-        // EncoderConfigH264::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots),
-        // which it writes back to dpbCount.
-        const uint32_t numRefFrames = settings.refsL0 + settings.refsL1;
+        // EncoderConfigH264::InitDeviceCapabilities and InitDpbCount, then VkVideoEncoder::InitEncoder's
+        // min(.., maxDpbSlots), which it writes back to dpbCount.
+        const uint32_t numRefFrames = std::max(settings.maxNumRefFrames, settings.refsL0 + settings.refsL1);
         const uint32_t dpbCount = ((numRefFrames > 0) ? std::min(numRefFrames, settings.levelDpbSize) : settings.levelDpbSize) + 1;
-        m_maxDpbPicturesCount = std::min({dpbCount, 16u, settings.maxDpbSlots});
+        m_maxDpbPicturesCount = std::min(dpbCount, settings.maxDpbSlots);
 
         // EncoderConfigH264::InitSpsPpsParameters: the fields the DPB and the reference lists read.
         m_sps.flags.frame_mbs_only_flag = 1;
         m_sps.log2_max_frame_num_minus4 = 4;
         m_sps.log2_max_pic_order_cnt_lsb_minus4 = 4;
-        m_sps.max_num_ref_frames = static_cast<uint8_t>(settings.refsL0 + settings.refsL1);
+        m_sps.max_num_ref_frames = static_cast<uint8_t>(numRefFrames);
         m_pps.num_ref_idx_l0_default_active_minus1 = static_cast<uint8_t>((settings.refsL0 > 0) ? settings.refsL0 - 1 : 0);
         m_pps.num_ref_idx_l1_default_active_minus1 = static_cast<uint8_t>((settings.refsL1 > 0) ? settings.refsL1 - 1 : 0);
         if ((m_sps.max_num_ref_frames == 0) || (m_sps.max_num_ref_frames <= m_pps.num_ref_idx_l0_default_active_minus1)) {
@@ -352,9 +354,8 @@ class H265Driver : public CodecDriver {
    public:
     H265Driver(const Settings& settings, const VkVideoGopStructure&, FILE* out) : m_out(out) {
         // EncoderConfigH265::InitDpbCount (VerifyDpbSize keeps 5 at the levels the encoder picks),
-        // then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots), which it writes back to
-        // dpbCount.
-        const uint32_t dpbCount = std::min({5u, 16u, settings.maxDpbSlots});
+        // then VkVideoEncoder::InitEncoder's min(.., maxDpbSlots), which it writes back to dpbCount.
+        const uint32_t dpbCount = std::min(5u, settings.maxDpbSlots);
         m_maxDpbPicturesCount = dpbCount;
 
         // EncoderConfigH265::InitParamameters and InitializeSpsRefPicSet.
@@ -594,7 +595,7 @@ class AV1Driver : public CodecDriver {
         caps.bidirectionalCompoundReferenceNameMask = settings.av1Bidir[3];
         caps.flags = settings.av1CdfOnly ? VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR : 0;
 
-        // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots).
+        // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., maxDpbSlots).
         m_maxDpbPicturesCount = AV1DpbSize(settings);
         // EncoderConfigAV1::InitSequenceHeader: the fields the DPB and the frame header read.
         m_seqHdr.flags.frame_id_numbers_present_flag = 0;
@@ -644,10 +645,10 @@ class AV1Driver : public CodecDriver {
         config.Emit(m_out);
     }
 
-    // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots).
+    // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., maxDpbSlots).
     // VkVideoEncoderAV1::InitEncoderCodec refuses fewer than STD_VIDEO_AV1_NUM_REF_FRAMES.
     static uint32_t AV1DpbSize(const Settings& settings) {
-        return std::min({static_cast<uint32_t>(STD_VIDEO_AV1_NUM_REF_FRAMES + 1), 16u, settings.maxDpbSlots});
+        return std::min(static_cast<uint32_t>(STD_VIDEO_AV1_NUM_REF_FRAMES + 1), settings.maxDpbSlots);
     }
 
     // VkVideoEncoderAV1::EncodeFrame: the members ProcessDpb reads.
@@ -858,12 +859,14 @@ bool ParseCounts(const char* text, uint32_t* values, size_t count) {
 int Usage(const char* program) {
     fprintf(stderr,
             "Usage: %s --codec h264|h265|av1 [-o <trace>] [--frames N] [--gop N] [--idr N] [--bframes N] [--closed-gop]\n"
-            "          [--refs-l0 N] [--refs-l1 N] [--level-dpb N] [--max-dpb-slots N] [--max-active-refs N]\n"
+            "          [--refs-l0 N] [--refs-l1 N] [--max-num-ref-frames N] [--level-dpb N] [--max-dpb-slots N]\n"
+            "          [--max-active-refs N]\n"
             "          [--av1-single N:MASK] [--av1-unidir N:G1:MASK] [--av1-bidir N:G1:G2:MASK] [--av1-cdf-only 0|1]\n"
             "       %s --asserts\n"
             "Drives the encoder's DPB through a GOP sequence as the encoder does, and writes the\n"
             "setup slot, reference lists or names, and references of every picture. --refs-l0, --refs-l1\n"
-            "and --level-dpb apply to H.264 and H.265. --max-dpb-slots is the device's maxDpbSlots;\n"
+            "and --level-dpb apply to H.264 and H.265, --max-num-ref-frames (the encoder's\n"
+            "--maxNumRefFrames) to H.264. --max-dpb-slots is the device's maxDpbSlots;\n"
             "--max-active-refs and the --av1- options give AV1 the device's maxActiveReferencePictures\n"
             "and reference capabilities (counts, group counts and name masks), --av1-cdf-only whether it\n"
             "takes a primary reference frame for its CDFs only (1). --asserts prints whether the encoder\n"
@@ -911,6 +914,8 @@ int main(int argc, char** argv) {
             settings.refsL0 = static_cast<uint32_t>(strtoul(value, nullptr, 0));
         } else if (arg == "--refs-l1") {
             settings.refsL1 = static_cast<uint32_t>(strtoul(value, nullptr, 0));
+        } else if (arg == "--max-num-ref-frames") {
+            settings.maxNumRefFrames = static_cast<uint32_t>(strtoul(value, nullptr, 0));
         } else if (arg == "--level-dpb") {
             settings.levelDpbSize = static_cast<uint32_t>(strtoul(value, nullptr, 0));
         } else if (arg == "--max-dpb-slots") {
@@ -960,6 +965,9 @@ int main(int argc, char** argv) {
         .Num("level_dpb", settings.levelDpbSize)
         .Num("max_dpb_slots", settings.maxDpbSlots)
         .Emit(out);
+    if (settings.maxNumRefFrames != 0) {
+        Line("encoder-dpb-option").Num("max_num_ref_frames", settings.maxNumRefFrames).Emit(out);
+    }
 
     // EncoderConfig's GOP, initialized as VkVideoEncoder::InitEncoder does.
     VkVideoGopStructure gop(settings.gopFrameCount, settings.idrPeriod, static_cast<uint8_t>(settings.bFrames), 1,

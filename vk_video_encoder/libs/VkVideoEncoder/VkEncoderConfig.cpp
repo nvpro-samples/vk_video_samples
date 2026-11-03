@@ -314,7 +314,10 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         LOG_INFO("\nH264 specific arguments:\n\
-        --slices                        <integer> : Number of slices to divide the picture into\n");
+        --slices                        <integer> : Number of slices to divide the picture into\n\
+        --maxNumRefFrames               <integer> : Reference frames the DPB keeps (max_num_ref_frames),\n\
+                                        1 to 16; the level is chosen to hold them. Default: the\n\
+                                        device's preferred L0 + L1 reference counts\n");
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)) {

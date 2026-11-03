@@ -3319,14 +3319,12 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     }
 
-    // The required num of DPB images: at most 16 slots. A reference bound at DPB slot index 16 hangs
-    // the encode ASIC of some implementations (fence waits time out with VK_ERROR_DEVICE_LOST), so
-    // this encoder never binds that slot.
-    // The device's maxDpbSlots bounds the count too. The session, the codec's DPB context and the
-    // parameter sets, which size the DPB from dpbCount, all take this one count, so the DPB context
+    // The DPB slots: the codec's need (H.264: the reference frames and the picture being set up, so 17
+    // with 16 references), within the device's maxDpbSlots. The session, the codec's DPB context and
+    // the parameter sets, which size the DPB from dpbCount, all take this one count, so the DPB context
     // hands out no slot the session lacks.
-    m_maxDpbPicturesCount = std::min<uint32_t>(
-        {static_cast<uint32_t>(encoderConfig->InitDpbCount()), 16u, encoderConfig->videoCapabilities.maxDpbSlots});
+    m_maxDpbPicturesCount = std::min<uint32_t>(static_cast<uint32_t>(encoderConfig->InitDpbCount()),
+                                               encoderConfig->videoCapabilities.maxDpbSlots);
     encoderConfig->dpbCount = static_cast<int8_t>(m_maxDpbPicturesCount);
 
     encoderConfig->InitRateControl();
