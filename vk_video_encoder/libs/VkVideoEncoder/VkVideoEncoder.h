@@ -881,9 +881,7 @@ public:
         , m_streamBufferSize(m_minStreamBufferSize)
         , m_rateControlInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
         , m_rateControlLayersInfo{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }}
-        , m_picIdxToDpb{}
         , m_gopState()
-        , m_dpbSlotsMask(0)
         , m_frameNumInGop()
         , m_IDRPicId(0)
         , m_videoMaintenance1FeaturesSupported(false)
@@ -1856,9 +1854,7 @@ protected:
     std::mutex               m_pendingRateControlMutex;
     bool                     m_pendingRateControlArmed = false;
     PendingRateControlUpdate m_pendingRateControlUpdate = {};
-    int8_t   m_picIdxToDpb[17]; // MAX_DPB_SLOTS + 1
     VkVideoGopStructure::GopState         m_gopState;
-    uint32_t m_dpbSlotsMask;
     uint32_t m_frameNumInGop;
     uint32_t m_IDRPicId;
     uint32_t m_videoMaintenance1FeaturesSupported : 1;
