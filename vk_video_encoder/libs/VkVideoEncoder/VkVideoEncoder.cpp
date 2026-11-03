@@ -1169,13 +1169,13 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
         // which is what InitEncoder handed VulkanFilterYuvCompute::Create --
         // and its shader's plane count, bit depth and bindings are fixed to
         // it. A frame in some OTHER non-encode format routed here would bind
-        // its planes into a shader that expects a different layout. The legacy
-        // arm cannot check any of the facts the registered arm checks (the
-        // wrapper it just built is view-less for LINEAR, and fabricates create
-        // flags for OPTIMAL), so it must not claim more than the format
-        // equality it can actually see; the ext layer refuses the classes this
-        // leaves unserved (SubmitExternalFrameCommon), rather than silently
-        // degrading them to the copy.
+        // its planes into a shader that expects a different layout. This
+        // path cannot check the image's create flags (the wrapper it just
+        // built is view-less for LINEAR, and fabricates create flags for
+        // OPTIMAL), so it must not claim more than the format equality it can
+        // actually see; the ext layer refuses the classes this leaves
+        // unserved (SubmitExternalFrame), rather than silently degrading them
+        // to the copy.
         encodeFrameInfo->externalInputViaFilter =
             (format != m_imageInFormat) &&
             (format == m_encoderConfig->input.vkFormat);
@@ -1187,94 +1187,6 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
         //   - Call EncodeFrameCommon() at the end
         return StageInputFrame(encodeFrameInfo);
     }
-}
-
-VkResult VkVideoEncoder::SetExternalInputFrameWithNode(
-    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-    VkSharedBaseObj<VulkanVideoImagePoolNode>& node,
-    uint64_t registrationId,
-    bool directlyEncodable,
-    bool routeViaFilter,
-    VkImageLayout srcImageCurrentLayout,
-    bool srcLayoutIsExplicit,
-    uint64_t frameId,
-    uint64_t pts,
-    bool isLastFrame,
-    bool forceIdr,
-    int32_t qpOverride,
-    ExternalInputResidency residency,
-    uint32_t waitSemaphoreCount,
-    const VkSemaphore* pWaitSemaphores,
-    const uint64_t* pWaitSemaphoreValues,
-    const VkPipelineStageFlags2* pWaitDstStageMasks,
-    uint32_t signalSemaphoreCount,
-    const VkSemaphore* pSignalSemaphores,
-    const uint64_t* pSignalSemaphoreValues)
-{
-    assert(encodeFrameInfo);
-    assert(node);
-
-    StampExternalFrameInfo(encodeFrameInfo, srcImageCurrentLayout, frameId,
-                           pts, isLastFrame, forceIdr, qpOverride, residency,
-                           waitSemaphoreCount, pWaitSemaphores,
-                           pWaitSemaphoreValues, pWaitDstStageMasks,
-                           signalSemaphoreCount, pSignalSemaphores,
-                           pSignalSemaphoreValues);
-
-    // Set AFTER the stamp, which clears the external-input block. Only this
-    // entry point can carry the distinction: the LEGACY lane has no
-    // registration default for the sentinel to stand in for, so every layout
-    // it receives is explicit by construction -- and it also builds a fresh
-    // node per frame, so it never reads a residual either way.
-    encodeFrameInfo->srcExternalLayoutIsExplicit = srcLayoutIsExplicit;
-    // Recorded before the Path-A return below, so a directly-encodable frame
-    // still carries its registration id -- the probe's own NOT_APPLICABLE
-    // latch for that case is set at ARM time, but a field that is only
-    // sometimes populated is the kind of thing a later reader gets wrong.
-    encodeFrameInfo->externalRegistrationId = registrationId;
-
-    // ===== THE ONE-FRAME STAGED DETOUR FOR A DIRECTLY-ENCODABLE IMPORT =====
-    //
-    // Path A hands the caller's imported image straight to
-    // vkCmdEncodeVideoKHR, so the producer's pixels never pass through a
-    // transfer this library records and the content probe has nothing to
-    // ride. That is what made the probe structurally blind to BLOCK-LINEAR
-    // imports -- the class the defect appears on -- since block-linear plus
-    // VIDEO_ENCODE_SRC is exactly what classifies DIRECT.
-    //
-    // The fix is deliberately NOT a new command buffer, a new submit, or a
-    // new barrier program on the encode queue. It is to send the FIRST frame
-    // of an armed registration down the staged path this library already runs
-    // for every other import, and let every later frame of that registration
-    // go DIRECT. NeedsCapture() is false from the moment the capture is
-    // recorded -- and from the moment the probe latches NOT_APPLICABLE -- so
-    // the detour is bounded at ONE frame per registration, the same budget
-    // the readback already has. It is unreachable entirely unless the caller
-    // chained VkVideoEncoderImportContentInfo onto the registration, which is
-    // the opt-in and has no other switch.
-    const bool probeStillOwesACapture =
-        m_contentProbe && m_contentProbe->NeedsCapture(registrationId);
-
-    if (directlyEncodable && !probeStillOwesACapture) {
-        // Path A: the registration's node IS the encode source. The encode
-        // reads the caller's imported image directly, so it -- not a
-        // staging copy -- is what must be acquired from FOREIGN.
-        encodeFrameInfo->srcEncodeImageResource = node;
-        encodeFrameInfo->srcEncodeImageIsExternal = true;
-        return EncodeFrameCommon(encodeFrameInfo);
-    }
-
-    // Path B/C: the registration's node is the staged input's source;
-    // StageInputFrame acquires the pool destination and records either the
-    // copy or the filter, per the routing the registration resolved.
-    encodeFrameInfo->srcStagingImageView = node;
-    // A DETOURED DIRECT FRAME TAKES THE COPY, NEVER THE FILTER. Its format is
-    // the encode-source format by construction -- that is what made it
-    // directly encodable -- so there is nothing for the filter to convert,
-    // and the filter's storage read is not a site the probe rides anyway.
-    encodeFrameInfo->externalInputViaFilter =
-        directlyEncodable ? false : routeViaFilter;
-    return StageInputFrame(encodeFrameInfo);
 }
 
 VulkanDeviceContext::QueueFamilySubmitType
@@ -1307,23 +1219,6 @@ uint32_t VkVideoEncoder::GetStagedInputQueueFamilyIdx() const
         default:
             return (uint32_t)m_vkDevCtx->GetTransferQueueFamilyIdx();
     }
-}
-
-// The staged-input queue family is what the probe's pool must be created on:
-// its two vkCmdCopyImage are recorded into the STAGING command buffer, and a
-// pool image created for the wrong family would be a queue-ownership
-// violation on the sessions where the staged lane is not the encode queue
-// (see GetStagedInputSubmitType, which has three answers, not one).
-void VkVideoEncoder::ConfigureContentProbe()
-{
-    if (!m_contentProbe || (m_vkDevCtx == nullptr) ||
-        (m_contentProbeQueueDepth == 0) || (m_encoderConfig == nullptr)) {
-        return;
-    }
-    m_contentProbe->Configure(m_vkDevCtx, m_contentProbeQueueDepth,
-                              GetStagedInputQueueFamilyIdx(),
-                              m_encoderConfig->encodeWidth,
-                              m_encoderConfig->encodeHeight);
 }
 
 VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
@@ -1477,25 +1372,16 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // get right and which the library cannot improve on -- and every later
     // frame uses a fact.
     //
-    // THREE CONDITIONS, EACH LOad-BEARING:
+    // TWO CONDITIONS, EACH LOAD-BEARING:
     //
     //  * NOT isExternalInput, deliberately. The library's own file-input lane
     //    is exactly the reused-registration shape this record exists for -- 24
     //    pool images recycled across a 60-frame file, each carrying the layout
     //    the previous frame's handback left it in. Excluding it is what made
     //    its every frame name PREINITIALIZED about an image already in GENERAL.
-    //    The two surviving conditions still fence the external lane the same
-    //    way, and they hold trivially for file input: nothing writes
-    //    srcExternalLayoutIsExplicit off the external path
-    //    (VkVideoEncoder.cpp, SubmitExternalFrameCommon), and isForeignImport
-    //    is false on every arm of the switch above when isExternalInput is.
-    //
-    //  * !srcExternalLayoutIsExplicit. A caller that fills
-    //    VkVideoEncoderFrameSubmitInfo::currentLayout for THIS frame is saying
-    //    "I moved it", which is exactly the case where our record is stale.
-    //    The public contract already carves this out -- UNDEFINED there means
-    //    "as declared at registration" -- so honouring it is reading the
-    //    documented field, not inventing a rule.
+    //    The surviving condition still fences the external lane, and holds
+    //    trivially for file input: isForeignImport is false on every arm of
+    //    the switch above when isExternalInput is.
     //
     //  * !isForeignImport. When the image really did go back to a foreign
     //    owner, an agent outside this library held it between frames and may
@@ -1517,7 +1403,6 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // silently. Routing reads the declaration; only the BARRIER reads the
     // record.
     if (!isForeignImport &&
-        !encodeFrameInfo->srcExternalLayoutIsExplicit &&
         encodeFrameInfo->srcStagingImageView->HasStagedInputResidualLayout()) {
         const VkImageLayout residual =
             encodeFrameInfo->srcStagingImageView->GetStagedInputResidualLayout();
@@ -1545,10 +1430,8 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // Now: the filter runs when this session HAS one and this FRAME needs it.
     // A file-input frame needs it exactly as before (session-level
     // enablePreprocessComputeFilter, no per-frame opinion); an external frame
-    // needs it when whoever admitted the frame said so -- from the
-    // registration's resolved input path, or from the frame's own format on
-    // the legacy arm. So one session can carry both kinds of frame, which is
-    // what a single blanket predicate could not express.
+    // needs it when SetExternalInputFrame said so, from the frame's own
+    // format. So one session can carry both kinds of frame.
     //
     // With the macro off this is a compile-time false and the copy arm is the
     // only arm, unchanged. Nothing routes a frame here that the copy cannot
@@ -1607,27 +1490,6 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 #endif
-
-    // THE ROUTING OBSERVABLE, recorded HERE and at no other site.
-    //
-    // This is the last point before the copy/filter split and the first point
-    // after every refusal return above, so a frame counted here is a frame
-    // whose staging barrier program was actually chosen and recorded -- on
-    // either arm -- exactly once. The alternative placement, inside the two
-    // arms' own release/handback pairs, needs four sites and undercounts the
-    // instant a session mixes filtered and copied frames.
-    //
-    // isExternalInput gates it because the library's own file-input lane
-    // declares no residency at all: counting it would make "every frame was
-    // local" true of a session that registered nothing, which is precisely
-    // the reading this channel exists to make falsifiable.
-    if (encodeFrameInfo->isExternalInput) {
-        if (isForeignImport) {
-            m_foreignAcquireCount.fetch_add(1, std::memory_order_relaxed);
-        } else {
-            m_localAcquireCount.fetch_add(1, std::memory_order_relaxed);
-        }
-    }
 
     if (!useComputeFilter) {
         // The acquire's destination family is the family of the queue this
@@ -1745,41 +1607,6 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         if (m_psnr && m_psnr->SrcCaptureEnabled()) {
             m_psnr->CaptureImported(cmdBuf, encodeFrameInfo.get(), linearInputImageView.get());
         }
-
-        // ===== THE IMPORT CONTENT PROBE =====
-        //
-        // The SHIPPING sibling of the debug capture above, at the same site
-        // and for the same physical reason: this is the one instruction
-        // boundary in the library at which the producer's imported pixels are
-        // (a) in a layout a transfer can read and (b) not yet mixed with
-        // anything the library did. The difference is what happens to the
-        // result -- MECHANISM-C narrates to stderr, which silenceStdio
-        // discards, and this reports through a chained struct that survives
-        // it.
-        //
-        // ONCE PER REGISTRATION, not per frame: NeedsCapture() is false from
-        // the second frame of a buffer on. On the owner's 5125-frame session
-        // over 5 registered buffers that is 5 readbacks, not 5125.
-        if (m_contentProbe &&
-            m_contentProbe->NeedsCapture(encodeFrameInfo->externalRegistrationId)) {
-            const VkSharedBaseObj<VkImageResource>& probeSrcRes =
-                linearInputImageView->GetImageResource();
-            const VkImageCreateInfo& probeSrcCI = probeSrcRes->GetImageCreateInfo();
-            VkExtent2D probeExtent = { probeSrcCI.extent.width,
-                                       probeSrcCI.extent.height };
-            m_contentProbe->RecordCapture(cmdBuf,
-                                          encodeFrameInfo->externalRegistrationId,
-                                          probeSrcRes->GetImage(),
-                                          probeSrcCI.format, probeExtent,
-                                          encodeFrameInfo->contentProbeCapture);
-        }
-
-        // The OTHER side of the observable. Counted here rather than derived
-        // as (staged - filtered): a derived count cannot distinguish a frame
-        // that took the copy from a frame that never reached this function
-        // at all, and a superset counter has already made a live tier read
-        // as dead once on this project.
-        m_stagedCopyCount.fetch_add(1, std::memory_order_relaxed);
 
         // ===== CF-02a: HAND THE COPY DESTINATION TO THE ENCODER =====
         //
@@ -2093,10 +1920,6 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // record succeeded, so a filter that failed to record leaves the
         // frame described as unfiltered rather than as filtered-and-broken.
         encodeFrameInfo->inputFilterRecorded = true;
-        // ...and the same fact made readable from OUTSIDE the library, on
-        // the same line and under the same success condition, so the
-        // observable can never drift from the routing flag it mirrors.
-        m_inputFilterDispatchCount.fetch_add(1, std::memory_order_relaxed);
 
         // ===== CF-02b: HAND THE FILTER'S OUTPUT TO THE ENCODER =====
         //
@@ -2464,7 +2287,7 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     // about that dispatch. The copy branch keeps the TRANSFER mask it has
     // always had; the filter branch -- newly reachable -- must not, because
     // the semaphores signalled here are the ones the embedder's release fence
-    // is exported from (SubmitExternalFrameCommon) and the one the encode
+    // is exported from (SubmitExternalFrame) and the one the encode
     // submit waits on.
     //
     // ALL_COMMANDS rather than COMPUTE_SHADER: the filter branch shares this
@@ -2701,16 +2524,6 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
     }
 
-    // POST-FENCE, and that is load-bearing: the probe's readback lands in
-    // HOST_VISIBLE memory written by the staging command buffer, which this
-    // frame's encode command buffer is ordered after. Scoring it before the
-    // fence would read whatever the mapping happened to hold. ScoreCapture
-    // is a no-op for the frames that carry no capture, which is all of them
-    // but the first of each armed registration.
-    if (m_contentProbe) {
-        m_contentProbe->ScoreCapture(encodeFrameInfo->contentProbeCapture);
-    }
-
     if (m_crc.Enabled()) {
         m_crc.SignalFrameEnd((uint32_t)(encodeFrameInfo->gopPosition.inputOrder));
     }
@@ -2738,17 +2551,6 @@ VkResult VkVideoEncoder::ReadbackBitstreamData(
     if (m_psnr && (m_psnr->Enabled() || m_psnr->SrcCaptureEnabled())) {
         std::lock_guard<std::mutex> psnrLock(m_assemblyFileMutex);
         m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
-    }
-
-    // The ASYNC assembly lane's copy of the post-fence score above. Both
-    // sites are needed and neither is redundant: a session runs one lane or
-    // the other, and wiring only the synchronous one is exactly how the
-    // async lane silently loses an observable (this tree has shipped that
-    // mistake once already, on the completion-record path). No
-    // m_assemblyFileMutex here -- the probe carries its own lock and touches
-    // no file output.
-    if (m_contentProbe) {
-        m_contentProbe->ScoreCapture(encodeFrameInfo->contentProbeCapture);
     }
 
     uint32_t querySlotId = (uint32_t)-1;
@@ -4614,28 +4416,6 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             return (result != VK_SUCCESS) ? result : VK_ERROR_INITIALIZATION_FAILED;
         }
 
-        // Filter-dispatch observable: record WHICH conversion was built.
-        // After the fatal check above, so the kind is only ever published
-        // for a filter that actually exists. Translated to the public
-        // taxonomy here rather than exposing VulkanFilterYuvCompute's enum,
-        // which is an internal header the ext consumer does not include.
-        switch (encoderConfig->filterType) {
-        case VulkanFilterYuvCompute::RGBA2YCBCR:
-            m_inputFilterKind.store(INPUT_FILTER_RGBA_TO_YCBCR,
-                                    std::memory_order_relaxed);
-            break;
-        case VulkanFilterYuvCompute::YCBCR2RGBA:
-            m_inputFilterKind.store(INPUT_FILTER_YCBCR_TO_RGBA,
-                                    std::memory_order_relaxed);
-            break;
-        default:
-            // VkEncDeriveFilterType collapses every YCbCr->YCbCr pair,
-            // including 3-plane I420 -> 2-plane NV12 and the identity,
-            // onto YCBCRCOPY.
-            m_inputFilterKind.store(INPUT_FILTER_YCBCR_COPY,
-                                    std::memory_order_relaxed);
-            break;
-        }
     }
 
     if ((result == VK_SUCCESS) && (m_inputComputeFilter != nullptr) ) {
@@ -4756,15 +4536,6 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         LOG_ERROR("InitEncoder: Failed to create FrameInfoBuffersQueue.\n");
         return result;
     }
-
-    // The dma-buf import content probe, if the ext layer has already injected
-    // one. There is no env var and no build flag gating it, because the
-    // OPT-IN IS THE CALLER CHAINING VkVideoEncoderImportContentInfo onto a
-    // registration -- and no allocation happens here either way: the probe's
-    // device-memory pool is configured lazily on the first capture actually
-    // recorded, so a session that arms nothing allocates nothing.
-    m_contentProbeQueueDepth = maxEncodeQueueDepth;
-    ConfigureContentProbe();
 
     // MECHANISM-C shares the PSNR helper's pool machinery but is gated on its own
     // env var, so the encoder-input capture can run WITHOUT the PSNR path's
@@ -7351,10 +7122,6 @@ int32_t VkVideoEncoder::DeinitEncoder()
             fflush(stderr);
         }
     }
-    if (m_contentProbe) {
-        m_contentProbe->Deinit();
-    }
-
     if (m_psnr) {
         m_psnr->Deinit();
     }

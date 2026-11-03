@@ -2832,41 +2832,6 @@ VK_ENC_PIN_ORDER(VkVideoEncoderInputFormatProperties, optimality, 8);
 #undef VK_ENC_PIN_ORDER
 
 //=============================================================================
-// VkVideoEncoderContentProbe::State is a PRIVATE MIRROR of
-// VkVideoEncoderImportContentState. The probe lives in the encoder library,
-// which sits below this file and must not include the ext header, so the two
-// enums are declared independently -- and independently declared enums drift.
-// These pin the mapping to the identity function, which is what
-// VkEncMapContentState() below relies on, and pin the one shared numeric
-// constant of the predicate. Tripping one means the mirror moved: fix the
-// mirror, do not "fix" the assert.
-//=============================================================================
-static_assert((int)VkVideoEncoderContentProbe::STATE_NOT_EVALUATED ==
-                  (int)VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_EVALUATED &&
-              (int)VkVideoEncoderContentProbe::STATE_NOT_APPLICABLE ==
-                  (int)VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_APPLICABLE &&
-              (int)VkVideoEncoderContentProbe::STATE_ARMED ==
-                  (int)VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_ARMED &&
-              (int)VkVideoEncoderContentProbe::STATE_CLEAN ==
-                  (int)VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_CLEAN &&
-              (int)VkVideoEncoderContentProbe::STATE_DAMAGED_CHROMA ==
-                  (int)VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_DAMAGED_CHROMA &&
-              (int)VkVideoEncoderContentProbe::STATE_DAMAGED_ALL ==
-                  (int)VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_DAMAGED_ALL,
-              "VkVideoEncoderContentProbe::State drifted from "
-              "VkVideoEncoderImportContentState");
-static_assert(VkVideoEncoderContentProbe::kDeadPlaneMeanQ8 ==
-                  VK_VIDEO_ENCODER_IMPORT_CONTENT_DEAD_PLANE_MEAN_Q8,
-              "the scorer's dead-plane threshold and the one the public "
-              "header documents have diverged");
-
-static inline VkVideoEncoderImportContentState VkEncMapContentState(
-    VkVideoEncoderContentProbe::State state)
-{
-    return (VkVideoEncoderImportContentState)state;
-}
-
-//=============================================================================
 // VulkanVideoEncoderExt interface (external frame input)
 //=============================================================================
 
