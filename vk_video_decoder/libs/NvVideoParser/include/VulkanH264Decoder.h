@@ -28,7 +28,6 @@
 
 #define MAX_REFS         32  // maximum size of reference picture lists (number of pictures)
 #define MAX_DPB_SIZE     16  // maximum size of decoded picture buffer (number of frames)
-#define MAX_DPB_SVC_SIZE 17  // maximum size of decoded picture buffer (number of frames) + reff buffer
 #define MAX_MMCOS        72  // maximum number of mmco's
 
 struct hrd_parameters_s
@@ -74,23 +73,6 @@ struct vui_parameters_s
     hrd_parameters_s vcl_hrd;
 };
 
-struct seq_parameter_set_svc_extension_s
-{
-    int inter_layer_deblocking_filter_control_present_flag;
-    int extended_spatial_scalability_idc;
-    int chroma_phase_x_plus1_flag;
-    int chroma_phase_y_plus1;
-    int seq_ref_layer_chroma_phase_x_plus1_flag;
-    int seq_ref_layer_chroma_phase_y_plus1;
-    int seq_scaled_ref_layer_left_offset;
-    int seq_scaled_ref_layer_top_offset;
-    int seq_scaled_ref_layer_right_offset;
-    int seq_scaled_ref_layer_bottom_offset;
-    int seq_tcoeff_level_prediction_flag;
-    int adaptive_tcoeff_level_prediction_flag;
-    int slice_header_restriction_flag;
-};
-
 struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVideoH264SequenceParameterSet
 {
     static const char*                   m_refClassId;
@@ -101,8 +83,6 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
     // private interface
     NvScalingListH264 seqScalingList;
     vui_parameters_s vui;
-    // SVC
-    seq_parameter_set_svc_extension_s svc;
 
     int constraint_set_flags;
 
@@ -118,7 +98,6 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
     , stdHrdParameters()
     , seqScalingList()
     , vui()
-    , svc()
     , constraint_set_flags()
       {
           pOffsetForRefFrame = offset_for_ref_frame;
@@ -178,7 +157,6 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
         stdVui = StdVideoH264SequenceParameterSetVui();
         seqScalingList = NvScalingListH264();
         vui = vui_parameters_s();
-        svc = seq_parameter_set_svc_extension_s();
         constraint_set_flags = 0;
 
         client = nullptr;
@@ -188,7 +166,6 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
     {
         if (pStdScalingLists && pSps->seqScalingList.scaling_matrix_present_flag) {
 
-            // see SetSeqPicScalingListsH264()
             memcpy(&pStdScalingLists->ScalingList4x4, &pSps->seqScalingList.ScalingList4x4,
                     sizeof(pSps->seqScalingList.ScalingList4x4));
             memcpy(&pStdScalingLists->ScalingList8x8, &pSps->seqScalingList.ScalingList8x8,
@@ -205,7 +182,6 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
                 }
             }
 
-            // see SetSeqPicScalingListsH264()
             return true;
         }
 
@@ -461,7 +437,6 @@ struct pic_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
     {
         if (pStdScalingLists && pPps->picScalinList.scaling_matrix_present_flag) {
 
-            // see SetSeqPicScalingListsH264()
             memcpy(&pStdScalingLists->ScalingList4x4, &pPps->picScalinList.ScalingList4x4,
                     sizeof(pPps->picScalinList.ScalingList4x4));
             memcpy(&pStdScalingLists->ScalingList8x8, &pPps->picScalinList.ScalingList8x8,
@@ -495,13 +470,6 @@ struct memory_management_control_operation_s
     int memory_management_control_operation;
     int difference_of_pic_nums_minus1;
     int long_term_frame_idx; // also used for long_term_pic_num and max_long_term_frame_idx_plus1
-};
-
-struct memory_management_base_control_operation_s
-{
-    int memory_management_base_control_operation;
-    int difference_of_base_pic_nums_minus1;
-    int long_term_base_pic_num;
 };
 
 struct ref_pic_list_reordering_s
@@ -588,47 +556,6 @@ struct slice_header_s
     int view_id;
     // FMO
     unsigned int slice_group_change_cycle;
-    // SVC
-    int base_pred_weight_table_flag;
-    int store_ref_base_pic_flag;
-    int adaptive_ref_base_pic_marking_mode_flag;
-    memory_management_base_control_operation_s mmbco[MAX_MMCOS];
-    int ref_layer_dq_id;
-    int disable_inter_layer_deblocking_filter_idc;
-    int inter_layer_slice_alpha_c0_offset_div2;
-    int inter_layer_slice_beta_offset_div2;
-    int constrained_intra_resampling_flag;
-    int ref_layer_chroma_phase_x_plus1_flag;
-    int ref_layer_chroma_phase_y_plus1;
-    int scaled_ref_layer_left_offset;
-    int scaled_ref_layer_top_offset;
-    int scaled_ref_layer_right_offset;
-    int scaled_ref_layer_bottom_offset;
-    int slice_skip_flag;
-    int num_mbs_in_slice_minus1;
-    int adaptive_base_mode_flag;
-    int default_base_mode_flag;
-    int adaptive_motion_prediction_flag;
-    int default_motion_prediction_flag;
-    int adaptive_residual_prediction_flag;
-    int default_residual_prediction_flag;
-    int tcoeff_level_prediction_flag;
-    nalu_header_extension_u nhe;
-};
-
-struct layer_data_s
-{
-    int available{};
-    int used{};
-    int MaxRefLayerDQId{};
-    int dqid_next{};
-    VkSharedBaseObj<seq_parameter_set_s> sps;
-    VkSharedBaseObj<pic_parameter_set_s> pps;
-    slice_header_s      slh{};
-    int slice_count{};
-
-    layer_data_s() = default;
-    ~layer_data_s() = default;
 };
 
 struct dpb_entry_s
@@ -661,58 +588,6 @@ struct dpb_entry_s
     int inter_view_flag;
 };
 
-struct svc_dpb_entry_s
-{
-    VkPicIf *pPicBuf;
-    VkPicIf *pPicBufRefBase;
-    bool complementary_field_pair;
-    int PicOrderCnt;
-    int ref;  // 0=unused for reference, 1=used for short-term reference, 2=used for long-term reference
-    int output; // 0=not needed for output, 1=needed for output
-    int TopFieldOrderCnt;
-    int BottomFieldOrderCnt;
-    int base; // 0=reference picture, 1=reference base picture
-    int non_existing; // 0=not marked as "non-existing", 1=marked as "non-existing"
-    int FrameNum;
-    int FrameNumWrap;
-    int PicNum;
-    int LongTermFrameIdx;
-    int LongTermPicNum;
-};
-
-struct prefix_nal_unit_svc_s
-{
-    nalu_header_extension_u nalu;
-    int store_ref_base_pic_flag;
-    // dec_ref_base_pic_marking
-    int adaptive_ref_base_pic_marking_mode_flag;
-    memory_management_base_control_operation_s mmbco[MAX_MMCOS];
-};
-
-struct dependency_state_s
-{
-    int MaxLongTermFrameIdx;
-    int prevPicOrderCntMsb;
-    int prevPicOrderCntLsb;
-    int prevFrameNum;
-    int prevFrameNumOffset;
-    int PrevRefFrameNum;
-    int dpb_entry_id; // next id
-    svc_dpb_entry_s dpb_entry[16+1]; // 1 temporary entry for current picture
-};
-
-struct dependency_data_s
-{
-    int used{};
-    VkSharedBaseObj<seq_parameter_set_s> sps;
-    seq_parameter_set_svc_extension_s    sps_svc{};
-    slice_header_s   slh{};
-    int MaxDpbFrames{};
-
-    dependency_data_s() = default;
-    ~dependency_data_s() = default;
-};
-
 typedef struct _slice_group_map_s
 {
     // This version of the parser does not support
@@ -728,15 +603,6 @@ typedef struct _frame_packing_arrangement_s
     unsigned int frame_packing_arrangement_type;
     unsigned int content_interpretation_flag;
 } frame_packing_arrangement_s;
-
-typedef struct _DPBPicNum
-{
-    int TopPicNum;
-    int BottomPicNum;
-    int PicOrderCnt;
-} DPBPicNum;
-
-typedef bool (*PFNSORTCHECK)(int, int *, const DPBPicNum *, const VkParserPictureData *);
 
 
 //
@@ -761,10 +627,7 @@ protected:
         : slh(),
           spssClientUpdateCount(),
           spsmes(),
-          spsmesClientUpdateCount(),
-          spssvcsClientUpdateCount(),
-          ppssClientUpdateCount(),
-          nhe()
+          ppssClientUpdateCount()
         {
 
         }
@@ -776,10 +639,7 @@ protected:
         slice_header_s slh;    // first slice of the picture (for dpb management)
         uint64_t  spssClientUpdateCount[MAX_NUM_SPS];
         seq_parameter_set_mvc_extension_s spsmes[MAX_NUM_SPS];
-        uint64_t spsmesClientUpdateCount[MAX_NUM_SPS];
-        uint64_t spssvcsClientUpdateCount[MAX_NUM_SPS];
         uint64_t ppssClientUpdateCount[MAX_NUM_PPS];
-        nalu_header_extension_u nhe;
     };
 
     // CNvVideoDecoder
@@ -794,15 +654,7 @@ protected:
 
 private:
     // Header parsing
-    enum SpsNalUnitTarget {
-       SPS_NAL_UNIT_TARGET_SPS = 0,
-       SPS_NAL_UNIT_TARGET_SPS_MVC,
-       SPS_NAL_UNIT_TARGET_SPS_SVC,
-    };
-
-    int32_t seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTarget = SPS_NAL_UNIT_TARGET_SPS,
-                                   seq_parameter_set_s *spssvc = NULL);
-    bool seq_parameter_set_mvc_extension_rbsp(int32_t sps_id);
+    int32_t seq_parameter_set_rbsp();
     bool vui_parameters(vui_parameters_s *vui);
     bool hrd_parameters(vui_parameters_s *vui, hrd_parameters_s *hrd);
     int scaling_list(unsigned char scalingList[], int sizeOfScalingList); // returns scaling_list_type
@@ -811,7 +663,6 @@ private:
     bool ref_pic_list_reordering(slice_header_s *slh);
     bool pred_weight_table(slice_header_s *slh, int chromaArrayType);
     void dec_ref_pic_marking(slice_header_s *slh);
-    void nal_unit_header_extension();
 
     // DPB management
     bool dpb_sequence_start(slice_header_s *slh);
@@ -842,45 +693,6 @@ private:
     void sei_payload(int payloadType, int payloadSize);
     // MVC
     int get_view_output_index(int view_id);
-    // SVC
-    bool prefix_nal_unit_svc(int nal_ref_idc);
-    int dec_ref_base_pic_marking(memory_management_base_control_operation_s mmbco[MAX_MMCOS]);
-    void update_layer_info(const VkSharedBaseObj<seq_parameter_set_s>& sps, const VkSharedBaseObj<pic_parameter_set_s>& pps, slice_header_s *slh);
-    bool seq_parameter_set_svc_extension_rbsp();
-    bool IsLayerBoundary_SVC(slice_header_s *slhold, slice_header_s *slhnew);
-    bool BeginPicture_SVC(VkParserPictureData *pnvpd);
-    void EndPicture_SVC();
-    void gaps_in_frame_num_SVC();
-    void picture_numbers_SVC(dependency_data_s *dd, dependency_state_s *ds);
-    void decoded_reference_picture_marking_SVC(dependency_data_s *dd, dependency_state_s *ds);
-    void sliding_window_ref_pic_marking(dependency_data_s *dd, dependency_state_s *ds);
-    void adaptive_ref_base_pic_marking(dependency_data_s *dd, dependency_state_s *ds);
-    void adaptive_ref_pic_marking(dependency_data_s *dd, dependency_state_s *ds);
-    // DPB for SVC
-    int dpb_fullness_SVC(dependency_state_s *ds);
-    bool dpb_full_SVC(dependency_data_s *dd, dependency_state_s *ds);
-    bool dpb_empty_SVC(dependency_state_s *ds) { return (dpb_fullness_SVC(ds) == 0); }
-    void dpb_bumping_SVC(dependency_state_s *ds);
-    void flush_dpb_SVC(dependency_state_s *ds);
-    void output_order_dpb_SVC(bool is_target_dep, dependency_data_s *dd, dependency_state_s *ds);
-    void picture_order_count_SVC(dependency_data_s *dd, dependency_state_s *ds);
-    void picture_order_count_type_0_SVC(dependency_data_s *dd, dependency_state_s *ds);
-    void picture_order_count_type_1_SVC(dependency_data_s *dd, dependency_state_s *ds);
-    void picture_order_count_type_2_SVC(dependency_data_s *dd, dependency_state_s *ds);
-    void output_picture_SVC(VkPicIf *, int);
-    bool init_sequence_svc(const seq_parameter_set_s* sps);
-
-protected:
-    // Decoder
-    void reference_picture_list_initialization_P_frame(int8_t *RefPicList0, const DPBPicNum *picnums, const VkParserPictureData *pd);
-    void reference_picture_list_initialization_P_field(int8_t *RefPicList0, const DPBPicNum *picnums, const VkParserPictureData *pd);
-    void reference_picture_list_initialization_B_frame(int8_t *RefPicList0, int8_t *RefPicList1, const DPBPicNum *picnums, const VkParserPictureData *pd);
-    void reference_picture_list_initialization_B_field(int8_t *RefPicList0, int8_t *RefPicList1, const DPBPicNum *picnums, const VkParserPictureData *pd);
-    int reference_picture_list_initialization_field(int8_t *refFrameListXShortTerm, int8_t *refFrameListLongTerm, int ksmax, int klmax, int8_t *RefPicListX, const VkParserPictureData *pd);
-    int reference_picture_list_initialization_field_ListX(int8_t *refFrameListX, int kfmax, int kmin, int8_t *RefPicListX, const VkParserPictureData *pd);
-    int sort_list_descending(int8_t *RefPicListX, int kmin, int n, const DPBPicNum *picnums, const VkParserPictureData *pd, PFNSORTCHECK sort_check);
-    int sort_list_ascending(int8_t *RefPicListX, int kmin, int n, const DPBPicNum *picnums, const VkParserPictureData *pd, PFNSORTCHECK sort_check);
-    void reference_picture_list_reordering_LX(int8_t *RefPicListX, int num_ref_idx_minus1, const ref_pic_list_reordering_s *rpl, const DPBPicNum *picnums, const VkParserPictureData *pd);
 
 private:
     // Parser state (unused by slice-level decoding)
@@ -895,7 +707,6 @@ private:
     uint32_t m_intra_pic_flag : 1;
     uint32_t m_idr_found_flag : 1;   // true in steady-state once we found an IDR picture
     uint32_t m_aso : 1;                 // true if ASO detected in current picture
-    uint32_t m_prefix_nalu_valid : 1;
     int m_last_sps_id;
     int m_last_sei_pic_struct;
     int m_last_primary_pic_type;
@@ -908,28 +719,14 @@ private:
     seq_parameter_set_mvc_extension_s *m_spsme; // active spsme
     VkSharedBaseObj<seq_parameter_set_s> m_spss[MAX_NUM_SPS];
     seq_parameter_set_mvc_extension_s *m_spsmes[MAX_NUM_SPS];
-    VkSharedBaseObj<seq_parameter_set_s> m_spssvcs[MAX_NUM_SPS];
     VkSharedBaseObj<pic_parameter_set_s> m_ppss[MAX_NUM_PPS];
     frame_packing_arrangement_s m_fpa; // Stereo SEI
     nalu_header_extension_u m_nhe;  // current nal ubit header extension
-    // use MVC decoder
-    bool m_bUseMVC;
     int m_prevPicOrderCntMsb, m_prevPicOrderCntLsb;
     int m_prevFrameNumOffset, m_prevFrameNum;
     int m_PrevRefFrameNum, m_PrevViewId;
-    int m_MaxRefFramesPerView;
     VkPicIf *CurrFrmViewPic[1024];    // frame buffer for all views of the current frame
-    // use SVC decoder
-    bool m_bUseSVC;
-    bool m_bLayerFirstSlice;
-    uint32_t m_iDQIdMax;
-    prefix_nal_unit_svc_s m_prefix_nal_unit_svc;
     slice_header_s m_slh_prev;
-    layer_data_s m_layer_data[8 * 16];
-    dependency_state_s m_dependency_state[8];
-    dependency_state_s *m_ds; // current dependency state
-    dependency_data_s m_dependency_data[8];
-    dependency_data_s *m_dd; // current dependency data
     slice_group_map_s* m_slice_group_map; // [pps_id] (base layer only)
 };
 

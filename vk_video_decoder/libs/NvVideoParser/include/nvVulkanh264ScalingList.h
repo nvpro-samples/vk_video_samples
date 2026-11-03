@@ -40,10 +40,4 @@ struct NvScalingListH264
     uint8_t ScalingList8x8[2][64];
 };
 
-NVPARSER_EXPORT
-bool SetSeqPicScalingListsH264(const NvScalingListH264 *pSeqScalingList,
-                               const NvScalingListH264 *pPicScalingList,
-                               uint8_t pWeightScale4x4[6][4][4],
-                               uint8_t pWeightScale8x8[2][8][8]);
-
 #endif /* _NVVULKANH264SCALINGLIST_H_ */
