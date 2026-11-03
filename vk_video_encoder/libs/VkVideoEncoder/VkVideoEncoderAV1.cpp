@@ -842,8 +842,8 @@ VkResult VkVideoEncoderAV1::WriteBitstreamToFile(
         encodeFrameInfo->gopPosition.pictureType);
 
     VkResult result = VK_SUCCESS;
-    // Browser (in-memory) path. Capture the AV1 temporal
-    // unit into the completion record (the FIFO the VEA drains) rather than
+    // Capture (in-memory) path. Capture the AV1 temporal unit into the
+    // completion record (the FIFO the retrieval API drains) rather than
     // muxing IVF to a file. Empirically the NVIDIA driver does NOT emit the
     // leading Temporal-Delimiter OBU, so prepend it -- as the standalone
     // IVF writer does -- else the OBU stream cannot be split into temporal

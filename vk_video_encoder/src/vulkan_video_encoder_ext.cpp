@@ -987,13 +987,10 @@ static VkResult VkEncRefuseIfProfileCannotCarryInput(
 
 // Free function: reads only its arguments, so a test can drive it with no
 // device and no encoder -- VkEncBuildAndProbeConfig above is that entry.
-// The layer-3 binder suite (VulkanVideoEncoderConfigBinderTest in Chromium's
-// vulkan_video_encode_accelerator_unittest.cc) drives it per codec arm and
-// asserts effect-or-explicit-rejection for every BOUND field in the section
-// 4.2 field table except outputPath, which has no probe projection: it
-// binds as a conditional file-open (see the disableFileOutput interplay
-// below) and no test exercises it -- the Chromium consumer nulls the field
-// by design.
+// test/encoder-ext-filter drives it and asserts effect-or-explicit-rejection
+// for the BOUND fields of the field table. outputPath has no probe
+// projection: it binds as a conditional file-open (see the
+// disableFileOutput interplay below).
 VkResult VkEncBuildEncoderConfig(
     const VkVideoEncoderConfig& extConfig,
     VkVideoCodecOperationFlagBitsKHR codecOp,
@@ -1479,8 +1476,8 @@ VkResult VkEncBuildEncoderConfig(
         // identity no consumer can reconstruct. Refuse the mode instead of
         // producing a stream that decodes to the wrong pictures.
         //
-        // File output keeps B-frames, and capture keeps B=0, which is what
-        // Chromium uses. The driver-preferred sentinel is not decided here --
+        // File output keeps B-frames, and capture refuses them. The
+        // driver-preferred sentinel is not decided here --
         // it resolves in InitDeviceCapabilities -- so the definitive refusal
         // is repeated in the core once the effective count is known.
         if ((codecOp == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) &&
@@ -1493,8 +1490,7 @@ VkResult VkEncBuildEncoderConfig(
             return VK_ERROR_FEATURE_NOT_PRESENT;
         }
         // 0 binds as 0: no B-frames, which is what both this header and the
-        // reference renderer's config document, and what the Chromium frame
-        // tracking requires.
+        // reference renderer's config document.
         cfg->gopStructure.SetConsecutiveBFrameCount(
             (uint8_t)extConfig.consecutiveBFrames);
     }
@@ -2240,15 +2236,13 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
     // for dead names will be tempted to remove them. Each is marked below with
     // the entry that requires it; removing one re-opens 01387 for its parent.
     //
-    // Why this was invisible for so long: all three were core-promoted, at
-    // Vulkan 1.2 / 1.2 / 1.3 respectively, and validation treats a dependency
-    // as satisfied by core once the INSTANCE apiVersion reaches the promoting
-    // version. Every in-tree sample creates its instance at
-    // VK_HEADER_VERSION_COMPLETE, so the VUID never fires there. Chromium does
-    // not: gpu/vulkan/vulkan_function_pointers.h pins
-    // kVulkanRequiredApiVersion = VK_API_VERSION_1_1, and the ADOPT path
-    // borrows that embedder instance -- below every promotion -- so on Chromium
-    // all three fire on the encode session's vkCreateDevice.
+    // All three were core-promoted, at Vulkan 1.2 / 1.2 / 1.3 respectively,
+    // and validation treats a dependency as satisfied by core once the
+    // INSTANCE apiVersion reaches the promoting version. Every in-tree sample
+    // creates its instance at VK_HEADER_VERSION_COMPLETE, so the VUID never
+    // fires there. An adopted instance may be at apiVersion 1.1, below every
+    // promotion, and the ADOPT path borrows it -- so there all three are
+    // required on the encode session's vkCreateDevice.
     //
     // OPTIONAL is the correct list. AddOptDeviceExtensions() only queues the
     // name; HasAllDeviceExtensions() (common/libs/VkCodecUtils/
@@ -2268,14 +2262,14 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
         VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
         // 01387 dependency of VK_EXT_image_drm_format_modifier, above.
-        // Core in 1.2; needed explicitly on a 1.1 instance (Chromium).
+        // Core in 1.2; needed explicitly on a 1.1 instance.
         VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,
         VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME,
 #endif
         VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
         // 01387 dependency of VK_EXT_descriptor_buffer, above.
-        // Core in 1.2; needed explicitly on a 1.1 instance (Chromium).
+        // Core in 1.2; needed explicitly on a 1.1 instance.
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
@@ -2285,7 +2279,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME,
         VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_EXTENSION_NAME,
         // 01387 dependency of VK_KHR_video_encode_quantization_map, above.
-        // Core in 1.3; needed explicitly on a 1.1 instance (Chromium).
+        // Core in 1.3; needed explicitly on a 1.1 instance.
         VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME,
         VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_EXTENSION_NAME,
         nullptr
@@ -2310,9 +2304,8 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
     // Measured, not argued: a probe reading /proc/self/maps around one
     // create/destroy reports libvulkan.so.1 mapped 0 -> 1 -> 0. Whenever this
     // session holds the last reference the shared object is UNMAPPED, and any
-    // embedder function-pointer table bound to it -- Chromium's
-    // gpu::VulkanFunctionPointers are bound to exactly this library -- is left
-    // holding pointers into an unmapped object.
+    // embedder function-pointer table bound to it is left holding pointers
+    // into an unmapped object.
     //
     // That it has not crashed yet is ordering, not contract: something else
     // usually holds a reference first (the capability enumerator building its
@@ -5468,8 +5461,8 @@ constexpr uint32_t kVkEncImportOrdinalGuardCount = 0;
 // Capacity of the per-device retained-image array, deliberately independent
 // of the count above. Two reasons, both concrete: a count of 0 must not
 // produce a zero-length array (not standard C++; -Wpedantic rejects it
-// outright, and neither this library's nor Chromium's flags happen to pass
-// it today, which is not a property to depend on), and the measured phase
+// outright, and no build flag should be relied on to admit it), and the
+// measured phase
 // sweep ran K = 0..4, so the whole sweep stays reachable by editing the one
 // line above.
 constexpr uint32_t kVkEncImportOrdinalGuardCapacity = 4;
@@ -5536,10 +5529,9 @@ bool VkEncImportOrdinalGuardDisabled()
     // check-then-store on the registration path, which is reached before the
     // guard-count-zero return and well before any mutex is taken, so two
     // sessions registering at once both saw -1 and both wrote. A function-local
-    // static with a dynamic initializer is initialized exactly once, and the
-    // supported CMake and GN builds both keep the thread-safe guard that makes
-    // that true -- none of the reviewed Chromium settings disable it. (If a
-    // supported build ever did, this would need std::call_once; const alone
+    // static with a dynamic initializer is initialized exactly once, and a
+    // build that keeps the thread-safe static guard (the default) makes that
+    // true. (A build that disables it would need std::call_once; const alone
     // would not make dynamic initialization safe.)
     //
     // The predicate is unchanged: absent, empty and leading-zero all mean
@@ -5560,11 +5552,9 @@ bool VkEncIsNvidiaDevice(const VulkanDeviceContext& vkDevCtx)
     // no INSTANCE-level dispatch at all -- it worked entirely off the device.
     // The guard calls this on the way in to every dma-buf import, so a context
     // whose instance table was never populated now reaches a null function
-    // pointer on a path a caller can reach. That is not
-    // hypothetical: it segfaults all ten of Chromium's
-    // VulkanVideoEncoderImportOwnershipTest cases, which construct a bare
-    // VulkanDeviceContext and stub only the device-level entries the import
-    // itself uses. ip=0, SEGV_MAPERR at address 0.
+    // pointer on a path a caller can reach: a test that constructs a bare
+    // VulkanDeviceContext and stubs only the device-level entries the import
+    // itself uses would call through address 0.
     //
     // The direction of the failure is chosen, not incidental. Returning false
     // means "not NVIDIA", so the guard reports NOT_NVIDIA and does not run, and
@@ -5654,11 +5644,10 @@ static void VkEncEnsureImportOrdinalGuard(
     }
     // EVERY remaining exit names a verdict, and that is the point of this
     // block rather than a tidiness preference. The two failure paths below
-    // return SILENTLY when the report they log is
-    // discarded -- and the shipping Chromium configuration discards it, by
-    // setting silenceStdio -- so a workaround that had degraded back to the
-    // defect was indistinguishable from one that was working. The verdict
-    // is the channel that survives that. See VkVideoEncoderImportGuardInfo.
+    // return SILENTLY when the report they log is discarded -- silenceStdio
+    // discards it -- so a workaround that had degraded back to the defect
+    // would be indistinguishable from one that was working. The verdict is
+    // the channel that survives that. See VkEncImportOrdinalGuardReport.
     if (VkEncImportOrdinalGuardDisabled()) {
         VkEncSetImportGuardVerdict(
             VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_DISABLED, 0,
@@ -6170,11 +6159,8 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
 #endif
 
     // THE HANDOFF. From this call on -- success or failure -- the fd is
-    // never the library's to close: NVIDIA consumes it even when the
-    // import allocation FAILS (Chromium documents the behavior at
-    // gpu/vulkan/vulkan_memory.cc and splits its own import path on
-    // exactly this line, gpu/vulkan/vulkan_image.h InitializeResult).
-    // Closing it again here or in any caller is a double close of an fd
+    // never the library's to close: the driver may consume it even when the
+    // import allocation FAILS. Closing it again here or in any caller is a double close of an fd
     // number the process may already have recycled.
     result = vkDevCtx.AllocateMemory(device, &allocInfo, nullptr,
                                      &outImport->memory);
@@ -6783,7 +6769,7 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
     if (result != VK_SUCCESS) {
         // Driver does not support encode for this codec on this device. Leave
         // *outCaps zeroed (codec field already set) and propagate the result;
-        // callers (e.g. the Chromium enumerator) treat this as "no profile".
+        // callers treat this as "no profile".
         return result;
     }
 
@@ -8235,9 +8221,8 @@ VkResult VkEncQueryInputFormatSupport(
 // context they build and throw away, so that a caller holding no Vulkan
 // handles reaches the same code as one that supplies its own.
 //
-// They are the reason the context is on the executed path from day one: the
-// Chromium enumerator calls the ephemeral per-profile variant once per
-// candidate profile, and every one of those calls now goes through
+// An enumerator calls the ephemeral per-profile variant once per candidate
+// profile, and every one of those calls goes through
 // CreateVulkanVideoEncoderContext.
 //=============================================================================
 
@@ -8296,13 +8281,11 @@ VkResult EnumerateVulkanVideoEncoderProfileCapabilitiesEphemeral(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    // "Ephemeral" now names the API contract, not the implementation: the
-    // caller still supplies no handles and still gets none back. What is no
-    // longer ephemeral is the VkInstance -- an OWN-mode context is built once
-    // and floor-referenced, so the five calls the Chromium enumerator makes
-    // per cache computation cost one loader load and one vkCreateInstance in
-    // total instead of five of each. That is D1, and it is the whole reason
-    // the context exists.
+    // "Ephemeral" names the API contract, not the implementation: the caller
+    // supplies no handles and gets none back. The VkInstance is not ephemeral
+    // -- an OWN-mode context is built once and floor-referenced, so repeated
+    // calls cost one loader load and one vkCreateInstance in total rather
+    // than one of each per call.
     VkVideoEncoderContextCreateInfo createInfo = {};
     createInfo.mode = VK_VIDEO_ENCODER_CONTEXT_MODE_OWN;
     // All-zero gpuUUID: enumerate everything, and select below.

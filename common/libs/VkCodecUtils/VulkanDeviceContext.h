@@ -277,9 +277,9 @@ public:
     //
     // Closing it is right for a standalone sample that owns its process.
     // It is wrong wherever anything ELSE in the process has resolved
-    // Vulkan entry points out of the same shared object -- Chromium's
-    // gpu::VulkanFunctionPointers are bound to exactly this library --
-    // because the unload invalidates their function pointers while they
+    // Vulkan entry points out of the same shared object -- for example an
+    // embedder's own dispatch table bound to the same libvulkan -- because
+    // the unload invalidates their function pointers while they
     // still hold them. The encoder context sets this in both of its
     // modes, including for a context it creates and releases inside one
     // call; nothing else in the tree does.

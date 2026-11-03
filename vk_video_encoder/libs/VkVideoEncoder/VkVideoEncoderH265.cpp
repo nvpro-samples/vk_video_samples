@@ -363,11 +363,11 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     VkResult result = VK_SUCCESS;
 
-    // In capture mode (disableFileOutput -- the Chromium in-memory
-    // bitstream path) EVERY IDR chunk must be independently decodable: the
-    // VEA hands keyframe chunks to consumers that expect in-band VPS/SPS/PPS
-    // on each keyframe, including mid-stream forced IDRs. The file-based
-    // sample keeps the original headers-once-at-stream-start behavior.
+    // In capture mode (disableFileOutput: the bitstream is delivered in
+    // memory) EVERY IDR chunk must be independently decodable: a consumer
+    // of keyframe chunks expects in-band VPS/SPS/PPS on each keyframe,
+    // including mid-stream forced IDRs. The file-based sample keeps the
+    // original headers-once-at-stream-start behavior.
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
             ((encodeFrameInfo->frameEncodeInputOrderNum == 0) ||
              (m_encoderConfig->disableFileOutput != 0)

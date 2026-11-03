@@ -43,9 +43,9 @@
 // same-device PASS is a device-independence defect. Both FAIL is an
 // export/environment defect and says nothing about device independence.
 //
-// The IMPORT image's usage is separable from the exporter's, because that is
-// the only half a Chromium-shaped consumer controls: the buffer is exported by
-// GBM/Ozone and the VulkanVideoEncodeAccelerator picks imageUsage for its own
+// The IMPORT image's usage is separable from the exporter's, because an
+// importing consumer controls only that half: the buffer is exported by a
+// foreign allocator (GBM) and the consumer picks imageUsage for its own
 // VkImage from a vkGetPhysicalDeviceImageFormatProperties2 answer. Use
 // --import-no-video-usage (or the raw --import-usage/--import-flags) to hold
 // the exporter fixed and move only that half.
@@ -154,12 +154,11 @@ struct TestConfig {
     // Import-side override for videoUsage. -1 follows videoUsage; 0 or 1
     // forces the IMPORT image's usage/flags independently of the exporter's.
     //
-    // This exists because Chromium's VulkanVideoEncodeAccelerator is only
-    // ever the importer: the buffer is exported by GBM/Ozone, and the VEA
-    // chooses imageUsage for its own VkImage from
-    // VveaModifierSupportsEncodeSrc(). Moving both halves together cannot
-    // tell us whether a chroma loss is attributable to the half Chromium
-    // controls.
+    // This exists because an importing consumer controls only the import
+    // image's usage: the buffer is exported by a foreign allocator (GBM),
+    // and the consumer chooses imageUsage for its own VkImage. Moving both
+    // halves together cannot tell whether a chroma loss is attributable to
+    // the half the importer controls.
     int         importVideoUsage{-1};
     // Raw overrides, applied after importVideoUsage. UINT32_MAX means
     // "not set". These exist to separate the usage bit from the create

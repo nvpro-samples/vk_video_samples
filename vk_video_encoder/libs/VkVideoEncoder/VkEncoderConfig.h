@@ -1125,8 +1125,8 @@ public:
 
     // CC-1: the matrix an UNNAMED colour description resolves to, derived
     // from the declared primaries. Static and public so the ext-filter suite
-    // can walk it as a table against the Chromium side's copy of the same
-    // rule. See the CC-1 block above ResolveRgbToYcbcrMatrix.
+    // can walk it as a table. See the CC-1 block above
+    // ResolveRgbToYcbcrMatrix.
     static uint8_t DeriveMatrixFromPrimaries(uint8_t primaries);
 
     // Signal the chroma siting the filter's 2x2 box average actually

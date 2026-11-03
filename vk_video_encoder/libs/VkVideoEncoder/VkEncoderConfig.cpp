@@ -496,9 +496,9 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             // the bytes go -- to the caller, or additionally to a file.
             //
             // Combining it with -o still writes no file: capture wins. A
-            // process that cannot touch the filesystem, such as the Chromium
-            // GPU process under sandbox, needs a mode in which no path is
-            // opened at all rather than one it must remember not to name.
+            // sandboxed process that cannot touch the filesystem needs a mode
+            // in which no path is opened at all rather than one it must
+            // remember not to name.
             disableFileOutput = true;
         } else if (args[i] == "-h" || args[i] == "--help") {
             printHelp(codec);
@@ -1461,15 +1461,10 @@ bool EncoderConfig::InitRateControl()
 // Colour contract for the RGBA->YCbCr preprocess filter.  ==  CC-1  ==
 // ===========================================================================
 //
-// THIS TABLE IS DUPLICATED, DELIBERATELY, IN
-//   chromium/media/gpu/vulkan/vulkan_video_encode_accelerator.cc
-// beside ValidateConfig's matrix guardrail. Code cannot be shared across the
-// two repositories, so the RULE is written out in both and each names the
-// other. IF YOU CHANGE ONE, CHANGE BOTH. Each side also has a table-shaped
-// test that walks every code point, so a drift shows up as a test diff in a
-// review rather than as a behaviour difference on a GPU
-// (library: test/encoder-ext-filter, CaseMatrixDispositionTable;
-//  Chromium: VulkanVeaMatrixTableTest).
+// A table-shaped test walks every code point
+// (test/encoder-ext-filter, CaseMatrixDispositionTable), so a change to a
+// disposition shows up as a test diff in a review rather than as a behaviour
+// difference on a GPU.
 //
 // THE RULE, in one sentence: an unnamed matrix is a DESCRIPTION, not a
 // request -- derive it, apply it, and signal the matrix actually applied; a
@@ -1493,52 +1488,40 @@ bool EncoderConfig::InitRateControl()
 //   12-14  chroma-derived/ICtCp refuse                           --
 //   255    unknown / INVALID    refuse                           --
 //
-// NOTE ON 0, and it is the one row where the two surfaces differ in what
-// they can even be ASKED. On Chromium's surface
-// VideoColorSpace::MatrixID::RGB == 0 is a real code point with a real
-// producer -- gfx::ColorSpace::MatrixID::RGB maps to it, and every sRGB
-// canvas / WebGL / WebCodecs RGBA frame carries it. On THIS library's ext
-// surface 0 is definitionally "not supplied" and is rewritten to 2 before it
-// reaches anything (vulkan_video_encoder_ext.cpp, grep
-// `0 IS "NOT SUPPLIED" ON THIS SURFACE`). So the `case 0` arm below cannot be
-// reached by any producer in this tree, and code point 0 arriving on the
-// public field behaves as UNNAMED -- which is the same disposition the table
-// gives it. The arm is kept as defence for a future producer, not deleted,
-// because a rule with a hole in it is how the two implementations drifted the
-// first time.
+// NOTE ON 0. H.273 matrix 0 (identity, GBR) is a real code point: an RGB
+// producer carries it. On this library's ext surface 0 is definitionally
+// "not supplied" and is rewritten to 2 before it reaches anything
+// (vulkan_video_encoder_ext.cpp, grep `0 IS "NOT SUPPLIED" ON THIS SURFACE`).
+// So the `case 0` arm below cannot be reached by any producer in this tree,
+// and code point 0 arriving on the public field behaves as UNNAMED -- which
+// is the same disposition the table gives it. The arm stays as defence for a
+// producer that can name 0, so the rule has no hole.
 //
 // THE DIRECT LANE (NV12 / P010 / I420) IS NOT SUBJECT TO ANY OF THIS. The
 // caller's Y'CbCr passes through untouched, the VUI describes the caller's own
 // data, and the matrix is the caller's business -- see
 // CaseYcbcrSessionKeepsAMatrixTheFilterCannotProduce.
 
-// The derivation for an UNNAMED matrix. Its ORIGIN is the in-tree hardware
-// precedent this contract was reconciled against -- Chromium's
-// media/gpu/windows/format_utils.cc, grep
-// GetEncoderOutputColorSpaceFromInputColorSpace, which is what the D3D12
-// video encoder does PER FRAME when a frame's matrix is RGB:
+// The derivation for an UNNAMED matrix, from the declared primaries:
 //
-//     PrimaryID::SMPTE170M -> MatrixID::SMPTE170M   (6 -> 6)
-//     PrimaryID::BT2020    -> MatrixID::BT2020_NCL  (9 -> 9)
-//     everything else      -> MatrixID::BT709       (-> 1)
+//     primaries 6 (SMPTE 170M)  -> matrix 6 (SMPTE 170M)
+//     primaries 9 (BT.2020)     -> matrix 9 (BT.2020 NCL)
+//     everything else           -> matrix 1 (BT.709)
 //
-// TWO ROWS BELOW ARE EXTENSIONS, NOT THE PRECEDENT, and they are marked
-// because "taken verbatim" was written here first and was false:
+// with two further rows:
 //
 //   * primaries 5 (BT.470BG) also derives 6. 5 and 6 are the 625-line and
 //     525-line spellings of the same BT.601 family and share one matrix
 //     (this file's own `case 5: case 6:` arm maps both to YCBCR_601), so
 //     sending 5 to BT.709 would be the one arm of the family that disagrees
-//     with the other. D3D12 does not hit this because gfx::ColorSpace's
-//     PrimaryID::BT470BG is not what its RGB producers carry.
+//     with the other.
 //   * primaries 7 (SMPTE 240M) also derives 6. The 240M and 170M PRIMARIES
 //     are the same chromaticities; only the transfer differs. Deriving 6 is
 //     truthful because 6 is the matrix the filter will actually build --
 //     matrix 7 is REFUSED by this contract, so it is not an option to derive.
 //
 // H.273 PRIMARIES CODE POINT 10 IS DELIBERATELY NOT IN THE BT.2020 ARM. It is
-// SMPTE ST 428-1 (CIE 1931 XYZ), not BT.2020 -- Chromium's own enum agrees
-// (VideoColorSpace::PrimaryID::SMPTEST428_1 = 10). Only MATRIX 10 is BT.2020
+// SMPTE ST 428-1 (CIE 1931 XYZ), not BT.2020. Only MATRIX 10 is BT.2020
 // (constant luminance). Anything with XYZ primaries and no named matrix falls
 // to BT.709 with the rest of the "we were not told" set.
 //
