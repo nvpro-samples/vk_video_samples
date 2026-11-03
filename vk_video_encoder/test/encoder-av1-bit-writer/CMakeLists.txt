@@ -28,6 +28,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_HEADERS_INCLUDE_DIR}
     $<TARGET_PROPERTY:vkvideo-dpb,INTERFACE_INCLUDE_DIRECTORIES>
 )
+# The encoder's headers include the AQ library's interface when the samples build with it
+# (NV_AQ_GPU_LIB), as the encoder library does.
+if(NV_AQ_GPU_LIB_INCLUDE_DIRS)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${NV_AQ_GPU_LIB_INCLUDE_DIRS})
+endif()
 add_dependencies(${PROJECT_NAME} ${VULKAN_VIDEO_ENCODER_STATIC_LIB})
 
 enable_testing()
