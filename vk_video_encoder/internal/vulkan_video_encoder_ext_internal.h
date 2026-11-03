@@ -78,34 +78,20 @@
 // ---------------------------------------------------------------------------
 // INTERNAL OBSERVATION STRUCTS
 //
-// What the library did with a frame, and what a dma-buf import produced.
-// None of it is part of the client contract: a caller encodes without naming
-// any of these types, and the routing decisions and driver mitigations they
-// report are implementation choices the library is free to change.
+// What a dma-buf import produced. None of it is part of the client contract:
+// a caller encodes without naming any of these types, and the driver
+// mitigations they report are implementation choices the library is free to
+// change.
 //
 // Each carries a structure type, taken from a band of the public numbering
 // that is assigned to these and never reused. No entry point of the
 // descriptor API takes or fills one: they state what the dma-buf
-// import-ordinal guard and the import content probe report, for the code
-// that runs them.
+// import-ordinal guard reports, for the code that runs it.
 // ---------------------------------------------------------------------------
 
 constexpr VkVideoEncoderStructureType
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_GUARD_INFO =
         (VkVideoEncoderStructureType)0x5645001C;
-constexpr VkVideoEncoderStructureType
-    VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_CONTENT_INFO =
-        (VkVideoEncoderStructureType)0x5645001D;
-
-// Which preprocess conversion the library built for a session.
-enum VkVideoEncoderFilterType {
-    VK_VIDEO_ENCODER_FILTER_TYPE_NONE = 0,
-    // Any YCbCr -> YCbCr conversion, including 3-plane I420 -> 2-plane NV12
-    // (plane-count and bit-depth conversion) and the identity copy.
-    VK_VIDEO_ENCODER_FILTER_TYPE_YCBCR_COPY = 1,
-    VK_VIDEO_ENCODER_FILTER_TYPE_RGBA_TO_YCBCR = 2,
-    VK_VIDEO_ENCODER_FILTER_TYPE_YCBCR_TO_RGBA = 3,
-};
 
 // ---------------------------------------------------------------------------
 // The dma-buf import-ordinal guard, and how to read its report.
@@ -115,8 +101,7 @@ enum VkVideoEncoderFilterType {
 // holds a fixed number of sacrificial imports on the device ahead of any
 // caller-visible one, so caller imports land at later live-positions. That is
 // a change of POSITION, not a repair: an import that lands damaged is still
-// damaged, and what the buffer actually holds is the question
-// VkVideoEncoderImportContentInfo below answers.
+// damaged.
 //
 // THE GUARD IS DISABLED BY DEFAULT: a stock build retains nothing and
 // reports DISABLED for every dma-buf import inside the guard's scope. Outside
@@ -179,143 +164,6 @@ typedef struct VkVideoEncoderImportGuardInfo {
         VK_VIDEO_ENCODER_STATUS_SUCCESS;                            // OUT
     int32_t failureErrno = 0;                                       // OUT
 } VkVideoEncoderImportGuardInfo;
-
-// ---------------------------------------------------------------------------
-// The imported-buffer content probe, and how to read its verdict.
-//
-// A dma-buf import can come back bound to memory the producer's writes never
-// reach. VkVideoEncoderImportGuardInfo above reports what a mitigation did;
-// this reports what the imported buffer actually CONTAINS.
-//
-// It is a content observation of the FIRST frame each registration serves,
-// taken at the staged copy. A registration that would otherwise encode
-// directly sends that one frame through the staged path and every later
-// frame direct, so the cost is one detoured frame per registration. It is
-// not a repair and not a prediction, and it cannot see a buffer that has not
-// yet carried a frame. The reaction to a damaged verdict is to stop using
-// that registration.
-//
-// THE PREDICATE. Let meanY, meanU and meanV be the plane means of the
-// imported frame, in 0..255:
-//
-//   DAMAGED_ALL     <=  (meanY < 2) && (meanU < 2) && (meanV < 2)
-//   DAMAGED_CHROMA  <=  (meanY >= 2) && ((meanU < 2) || (meanV < 2))
-//   CLEAN           <=  neither
-//
-// Luma and chroma are scored together rather than chroma alone, so an
-// all-zero buffer and a chroma-zeroed one stay distinguishable.
-//
-// ZEROED IS NOT BLACK, which is what makes the test sound: legal black in
-// NV12 is Y=16 (0 in full range) with U=V=128, so a zero chroma plane is a
-// value no correct encoder input carries. The false-positive budget is a
-// frame that is deliberately all-zero in every plane, which from inside the
-// library is indistinguishable from the defect; the cost is one frame per
-// registration, and the reaction to it is not destructive.
-//
-// WHEN THE VERDICT EXISTS. Once the first frame of a registration has been
-// staged and its fence waited -- never before the producer has written it.
-// Frames submitted in the meantime encode against the buffer and cannot be
-// recalled, because the library does not recall submitted GPU work (see
-// CancelFrame): roughly one pipeline depth of frames is the price of scoring
-// content that only exists once it is written.
-//
-// THE STATES.
-//
-//   STATE            MEANING                        WHAT TO DO
-//   ---------------  -----------------------------  ---------------------
-//   NOT_EVALUATED    No verdict yet: nothing        Poll again later. Also
-//                    armed, or nothing armed has    the zero value.
-//                    completed a frame.
-//   NOT_APPLICABLE   This registration cannot be    No verdict will come.
-//                    scored.
-//   ARMED            Set up, waiting for a frame.   Expect a verdict on a
-//                    A registration echo reports    later snapshot.
-//   CLEAN            Scored; the predicate did      Keep using the
-//                    not fire.                      registration.
-//   DAMAGED_CHROMA   Scored: chroma dead, luma      Stop using the
-//                    alive.                         registration.
-//   DAMAGED_ALL      Scored: every plane dead.      Stop using it.
-//
-// NOT_APPLICABLE is usually decided at registration and arrives in the echo:
-// the registration is FILTER-routed, which is a storage read and never a
-// copy; the import carries no TRANSFER_SRC, so no copy may legally be
-// recorded out of it; or the format is not 8-bit 2-plane 420, which the
-// predicate needs in order to have a Y, a U and a V to score. It can also
-// be latched on the first capture attempt -- the extent is degenerate, or
-// the capture pool cannot serve that format and extent. An ARMED echo is
-// therefore a verdict PENDING and not a verdict promised;
-// armedRegistrationCount tells one still in flight from one that will never
-// arrive.
-//
-// probeGeneration is a non-zero BUILD CONSTANT
-// (VK_VIDEO_ENCODER_IMPORT_CONTENT_PROBE_GENERATION) stamped on every path,
-// so probeGeneration != 0 is proof the library wrote the struct.
-//
-// meanY / meanU / meanV are the plane means in Q8 FIXED POINT -- the 0..255
-// mean times 256, so 128.0 reads as 32768 and the predicate's "< 2" is
-// "< 512". Integers rather than floats because this struct crosses a process
-// boundary. They are filled on CLEAN and DAMAGED_* alike, so a reader can
-// log why.
-// ---------------------------------------------------------------------------
-
-// Non-zero by contract: a non-zero probeGeneration is what proves the
-// library wrote the struct at all. Bump it if the predicate or the sampling
-// changes in a way that makes old and new verdicts non-comparable.
-#define VK_VIDEO_ENCODER_IMPORT_CONTENT_PROBE_GENERATION 1u
-
-// The predicate's threshold, in the Q8 units meanY/meanU/meanV carry: a plane
-// mean strictly below 2.0/255. Named rather than open-coded because the
-// library's scorer and every assertion on it have to agree.
-#define VK_VIDEO_ENCODER_IMPORT_CONTENT_DEAD_PLANE_MEAN_Q8 512u
-
-typedef enum VkVideoEncoderImportContentState {
-    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_EVALUATED  = 0,
-    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_APPLICABLE = 1,
-    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_ARMED          = 2,
-    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_CLEAN          = 3,
-    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_DAMAGED_CHROMA = 4,
-    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_DAMAGED_ALL    = 5,
-} VkVideoEncoderImportContentState;
-
-typedef struct VkVideoEncoderImportContentInfo {
-    VkVideoEncoderStructureType sType =
-        VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_CONTENT_INFO;
-    const void*                 pNext = nullptr;  // MUST be NULL
-
-    // Which registration this verdict belongs to.
-    // VK_VIDEO_ENCODER_RESOURCE_NULL when there is no verdict
-    // (NOT_EVALUATED), and on the registration echo, where the resource id is
-    // the call's own return value.
-    VkVideoEncoderResource resource = VK_VIDEO_ENCODER_RESOURCE_NULL;   // OUT
-    VkVideoEncoderImportContentState state =
-        VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_EVALUATED;            // OUT
-    // Non-zero build constant, stamped on every path. The writer proof.
-    uint32_t probeGeneration = 0;                                       // OUT
-    // Q8 fixed point: the 0..255 plane mean times 256.
-    uint32_t meanY = 0;                                                 // OUT
-    uint32_t meanU = 0;                                                 // OUT
-    uint32_t meanV = 0;                                                 // OUT
-    // Session totals: registrations that reached a CLEAN or DAMAGED_*
-    // verdict, and how many of those were DAMAGED_*.
-    uint32_t probedRegistrationCount = 0;                               // OUT
-    uint32_t damagedRegistrationCount = 0;                              // OUT
-    // REGISTRATIONS STILL WAITING FOR A VERDICT -- armed, not yet scored.
-    //
-    // READ THIS BEFORE BELIEVING damagedRegistrationCount == 0. The two
-    // counts above cannot distinguish "every buffer was probed and every one
-    // was clean" from "nothing was ever probed", because both report
-    // probed=0 damaged=0 when no capture ever ran. This field is what tells
-    // them apart: non-zero at the end of a session means that many buffers
-    // were promised a verdict and never got one, so the absence of damage
-    // reports is an absence of MEASUREMENT, not an absence of damage.
-    //
-    // Expected to be non-zero TRANSIENTLY -- a registration is armed at
-    // import and scored a frame or two later, so a mid-session poll legit-
-    // imately catches buffers in flight. It is a session that ENDS with this
-    // non-zero, or a long-running session where it never falls, that means
-    // the capture site is not being reached.
-    uint32_t armedRegistrationCount = 0;                                // OUT
-} VkVideoEncoderImportContentInfo;
 
 // Disposition of a public config field.
 //
