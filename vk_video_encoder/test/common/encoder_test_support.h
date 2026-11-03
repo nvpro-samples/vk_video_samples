@@ -339,11 +339,14 @@ struct Session {
     vk::video::enc::Ref<vk::video::enc::IBitstreamSource>   bitstream;
     vk::video::enc::Ref<vk::video::enc::IDeviceBinding>     binding;
 
-    Opened Open(uint32_t width, uint32_t height, const char** why)
+    // |platformInfo| names the instance and physical device a caller adopts;
+    // left at its defaults, the library creates its own.
+    Opened Open(uint32_t width, uint32_t height, const char** why,
+                vk::video::enc::PlatformCreateInfo platformInfo = {})
     {
         using namespace vk::video::enc;
 
-        PlatformCreateInfo info;
+        PlatformCreateInfo info = platformInfo;
         info.silenceStdio = true;
         if (VkEncCreatePlatform(info, platform) != VK_SUCCESS || !platform) {
             return NotOpened("no Vulkan encode platform", why);
