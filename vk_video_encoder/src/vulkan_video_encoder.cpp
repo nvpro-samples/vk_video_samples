@@ -30,7 +30,6 @@
 #include "vulkan_video_encoder.h"
 #include "vulkan_video_encoder_ext.h"
 #include "vulkan_video_encoder_ext_internal.h"
-#include "vulkan_video_encoder_os_event_linux.h"
 
 #include <algorithm>
 #include <iterator>
@@ -155,22 +154,6 @@ PictureType FromExtPictureType(VkVideoEncoderPictureType type)
     }
 }
 
-VkVideoEncoderInputResidency ToExtResidency(Residency residency, ExternalHandleType handleType)
-{
-    switch (residency) {
-    case Residency::Local:   return VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;
-    case Residency::Foreign: return VK_VIDEO_ENCODER_INPUT_RESIDENCY_FOREIGN;
-    case Residency::Auto:
-        break;
-    }
-    // An image already resident on the encoder's device needs no ownership
-    // transfer, and the library cannot infer that from the handle alone.
-    // Every other handle type is an import, where AUTO is the right answer.
-    return (handleType == ExternalHandleType::VkImageHandle)
-               ? VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL
-               : VK_VIDEO_ENCODER_INPUT_RESIDENCY_AUTO;
-}
-
 // The driver's own identity for a physical device. Read through the loader
 // the caller supplies, so the answer comes from the same driver the encoder
 // talks to rather than whichever one is first on the path.
@@ -197,29 +180,9 @@ bool VkEncQueryDeviceUuid(VkInstance instance, VkPhysicalDevice physicalDevice,
     return true;
 }
 
-VkVideoEncoderHandleOwnership ToExtOwnership(HandleOwnership ownership)
-{
-    return (ownership == HandleOwnership::Borrow)
-               ? VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_BORROW
-               : VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_TRANSFER;
-}
-
-VkVideoEncoderExternalHandleType ToExtHandleType(ExternalHandleType type)
-{
-    switch (type) {
-    case ExternalHandleType::NoHandle:          return VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_NONE;
-    case ExternalHandleType::OpaqueFd:      return VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_OPAQUE_FD;
-    case ExternalHandleType::DmaBuf:        return VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF;
-    case ExternalHandleType::OpaqueWin32:   return VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_OPAQUE_WIN32;
-    case ExternalHandleType::D3D11Texture:  return VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_D3D11_TEXTURE;
-    case ExternalHandleType::VkImageHandle: return VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_VK_IMAGE;
-    }
-    return VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_NONE;
-}
-
-// The descriptor API speaks two error currencies; this interface speaks one. A VkResult
-// that has no closer meaning becomes InternalError rather than being dropped,
-// and the detail string keeps the distinction visible in a log.
+// The descriptor API answers in VkResult; this interface in ResultCode. A
+// VkResult that has no closer meaning becomes InternalError rather than being
+// dropped, and the detail string keeps the distinction visible in a log.
 Result FromVkResult(VkResult result, const char* detail)
 {
     switch (result) {
@@ -233,110 +196,6 @@ Result FromVkResult(VkResult result, const char* detail)
     case VK_ERROR_OUT_OF_DEVICE_MEMORY:  return Result(ResultCode::OutOfResources, detail);
     case VK_ERROR_INITIALIZATION_FAILED: return Result(ResultCode::InternalError, detail);
     default:                             return Result(ResultCode::InternalError, detail);
-    }
-}
-
-Result FromExtStatusCode(VkVideoEncoderStatusCode code, const char* detail)
-{
-    if (code == VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-        return Result();
-    }
-    switch (code) {
-    case VK_VIDEO_ENCODER_STATUS_NOT_READY:
-        return Result(ResultCode::NotReady, detail);
-    case VK_VIDEO_ENCODER_STATUS_ERROR_FORMAT_UNSUPPORTED:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_MODIFIER_UNSUPPORTED:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_COLOR_MODEL_UNSUPPORTED:
-        return Result(ResultCode::UnsupportedFormat, detail);
-    case VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_EXTENSION_MISSING:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_SHARING_MODE_UNSUPPORTED:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_API_VERSION_UNSUPPORTED:
-        return Result(ResultCode::UnsupportedFeature, detail);
-    case VK_VIDEO_ENCODER_STATUS_ERROR_STRUCTURE_TYPE_UNKNOWN:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_ALLOCATION_SIZE_INVALID:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_EXTENT_INVALID:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_USAGE_INSUFFICIENT:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_RESOURCE_UNKNOWN:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH:
-    case VK_VIDEO_ENCODER_STATUS_ERROR_MEMORY_TYPE_UNSUPPORTED:
-        return Result(ResultCode::InvalidArgument, detail);
-    case VK_VIDEO_ENCODER_STATUS_ERROR_RESOURCE_LIMIT:
-        return Result(ResultCode::OutOfResources, detail);
-    case VK_VIDEO_ENCODER_STATUS_ERROR_NOT_INITIALIZED:
-        return Result(ResultCode::NotConfigured, detail);
-    default:
-        return Result(ResultCode::InternalError, detail);
-    }
-}
-
-//=============================================================================
-// EXTERNAL IMAGE
-//=============================================================================
-
-// Fill the descriptor the implementation expects. The OS handle travels
-// separately because the descriptor API takes it as its own argument.
-void ToExtImageDescriptor(const ExternalImage&                   image,
-                          VkVideoEncoderExternalImageDescriptor& out,
-                          uint64_t&                              outOsHandle)
-{
-    out = VkVideoEncoderExternalImageDescriptor();
-    out.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR;
-    out.pNext = nullptr;
-
-    out.handleType    = ToExtHandleType(image.handleType);
-    out.format        = image.format;
-    out.width         = image.width;
-    out.height        = image.height;
-    out.imageType     = VK_IMAGE_TYPE_2D;
-    out.mipLevels     = 1;
-    out.arrayLayers   = 1;
-    out.samples       = VK_SAMPLE_COUNT_1_BIT;
-    out.tiling        = image.tiling;
-    out.imageUsage    = image.usage;
-    out.imageFlags    = image.createFlags;
-    out.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-    out.residency     = ToExtResidency(image.residency, image.handleType);
-    out.ownership     = ToExtOwnership(image.ownership);
-    out.defaultLayout = image.layout;
-    out.colorModel    = ToExtColorModel(image.colorModel);
-    out.existingImage = image.existingImage;
-
-    out.hasDrmFormatModifier = image.hasDrmFormatModifier ? VK_TRUE : VK_FALSE;
-    out.drmFormatModifier    = image.drmFormatModifier;
-
-    out.planeCount = image.planeCount;
-    for (uint32_t i = 0; i < image.planeCount && i < VK_VIDEO_ENCODER_MAX_PLANES; ++i) {
-        out.planeLayouts[i].offset   = image.planeLayouts[i].offset;
-        out.planeLayouts[i].rowPitch = image.planeLayouts[i].rowPitch;
-        out.planeLayouts[i].size     = image.planeLayouts[i].size;
-    }
-
-    std::copy(std::begin(image.deviceUUID), std::end(image.deviceUUID),
-              std::begin(out.deviceUUID));
-    std::copy(std::begin(image.driverUUID), std::end(image.driverUUID),
-              std::begin(out.driverUUID));
-    std::copy(std::begin(image.deviceLUID), std::end(image.deviceLUID),
-              std::begin(out.deviceLUID));
-    out.deviceLUIDValid = image.deviceLuidValid ? VK_TRUE : VK_FALSE;
-
-    out.allocationSize  = image.allocationSize;
-    out.memoryTypeBits  = image.memoryTypeBits;
-    out.memoryTypeIndex = image.memoryTypeIndex;
-
-    switch (image.handleType) {
-    case ExternalHandleType::OpaqueFd:
-    case ExternalHandleType::DmaBuf:
-        outOsHandle = static_cast<uint64_t>(static_cast<uint32_t>(image.fd));
-        break;
-    case ExternalHandleType::OpaqueWin32:
-    case ExternalHandleType::D3D11Texture:
-        outOsHandle = reinterpret_cast<uint64_t>(image.win32Handle);
-        break;
-    default:
-        outOsHandle = 0;
-        break;
     }
 }
 
@@ -513,9 +372,6 @@ public:
         case Feature::HdrMetadata:
             // Carried by H.265 and AV1; H.264 has no such SEI.
             return true;
-        case Feature::DmaBufImport:
-        case Feature::ExternalSemaphores:
-        case Feature::RegisteredResources:
         case Feature::Reconfigure:
             return true;
         case Feature::BFrames:
@@ -634,12 +490,7 @@ public:
 
 // Accumulates a VkVideoEncoderConfig, and answers the questions the caller
 // would otherwise have to answer for itself.
-//
-// The HDR role is offered only for codecs that can carry the metadata, so an
-// H.264 caller learns that HDR is unavailable from a null Query rather than
-// from a refused session.
 class ConfigImpl final : public IEncoderConfig,
-                         public IHdrMetadataConfig,
                          public IConfigAccess {
 public:
     ConfigImpl(Codec codec, Profile profile, const PlatformCreateInfo& platform)
@@ -705,9 +556,6 @@ public:
     {
         if (id == IEncoderConfig::kId) {
             return static_cast<IEncoderConfig*>(this);
-        }
-        if (id == IHdrMetadataConfig::kId && CodecCarriesHdrMetadata()) {
-            return static_cast<IHdrMetadataConfig*>(this);
         }
         if (id == IConfigAccess::kId) {
             return static_cast<IConfigAccess*>(this);
@@ -785,6 +633,13 @@ public:
         return *this;
     }
 
+    IEncoderConfig& SetHdrMetadata(const HdrMetadata& metadata) override
+    {
+        m_hdr    = metadata;
+        m_hasHdr = true;
+        return *this;
+    }
+
     IEncoderConfig& RequireImportExtensions(bool require) override
     {
         m_requireImportExtensions = require;
@@ -851,10 +706,18 @@ public:
         if (!ProfileMatchesCodec(m_codec, m_profile)) {
             return Result(ResultCode::UnsupportedProfile, "profile does not belong to this codec");
         }
-        if (VkEncClassifyInput(m_config.inputFormat, m_config.inputColorModel) ==
-            VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+        // A format the encoder reaches only through the compute filter is
+        // refused with the formats it cannot take at all: a frame submitted
+        // through IFrameSubmitter is read directly or copied, and the filter
+        // never runs on it.
+        if (VkEncClassifyInput(m_config.inputFormat, m_config.inputColorModel) !=
+            VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT) {
             return Result(ResultCode::UnsupportedFormat,
                           "the encoder cannot take this input format on any path");
+        }
+        if (m_hasHdr && !CodecCarriesHdrMetadata()) {
+            return Result(ResultCode::UnsupportedFeature,
+                          "H.264 carries no HDR10 static metadata");
         }
         const bool constantQp =
             m_config.rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR;
@@ -864,12 +727,6 @@ public:
             return Result(ResultCode::InvalidArgument, "a bitrate mode needs an average bitrate");
         }
         return Result();
-    }
-
-    void SetHdrMetadata(const HdrMetadata& metadata) override
-    {
-        m_hdr        = metadata;
-        m_hasHdr     = true;
     }
 
     // Consumed by the session: the descriptor API takes HDR metadata as a
@@ -910,55 +767,18 @@ private:
 class SessionImpl final : public IEncoderSession,
                           public IFrameSubmitter,
                           public IBitstreamSource,
-                          public ICompletionSignal,
-                          public IResourceRegistry,
-                          public IDeviceBinding,
-                          public IDiagnostics,
-                          public IShutdownDiagnostics,
-                          public std::enable_shared_from_this<SessionImpl> {
+                          public IDeviceBinding {
 public:
     SessionImpl(const VkSharedBaseObj<VulkanVideoEncoderExt>& encoder,
                 const VkVideoEncoderConfig&                    config)
         : m_encoder(encoder), m_config(config) { }
-
-    // Detach before the encoder reference goes.
-    //
-    // Dropping m_encoder is not the same as destroying the encoder: an
-    // aliased role can still hold it, and its workers can still be draining.
-    // Whatever survives holds a callback registration this session installed,
-    // so the registration has to come down here rather than be left to the
-    // encoder's own teardown.
-    //
-    // The detach is a quiesce point -- it returns only once any in-flight
-    // invocation has returned -- and it hands the cookie back to
-    // TrampolineRelease, which frees it and runs the client release. No lock
-    // is held across it, for the reason SetCallback explains.
-    ~SessionImpl() override
-    {
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            m_closing = true;
-        }
-        if (m_encoder) {
-            // A refused detach cannot be reported from here and cannot be
-            // retried by abandoning the destructor. It is survivable rather
-            // than silent: the cookie belongs to the encoder either way, so
-            // refusing to detach leaks a registration, not a dangling one.
-            (void)m_encoder->SetCompletionCallback(nullptr, nullptr, nullptr);
-        }
-    }
 
     void* QueryInterface(std::string_view id) override
     {
         if (id == IEncoderSession::kId)   return static_cast<IEncoderSession*>(this);
         if (id == IFrameSubmitter::kId)   return static_cast<IFrameSubmitter*>(this);
         if (id == IBitstreamSource::kId)  return static_cast<IBitstreamSource*>(this);
-        if (id == ICompletionSignal::kId) return static_cast<ICompletionSignal*>(this);
-        if (id == IResourceRegistry::kId) return static_cast<IResourceRegistry*>(this);
         if (id == IDeviceBinding::kId)    return static_cast<IDeviceBinding*>(this);
-        if (id == IDiagnostics::kId)      return static_cast<IDiagnostics*>(this);
-        if (id == IShutdownDiagnostics::kId)
-            return static_cast<IShutdownDiagnostics*>(this);
         return nullptr;
     }
 
@@ -980,20 +800,18 @@ public:
     Result Reconfigure(const Ref<IEncoderConfig>& config) override
     {
         if (!config) {
-            return Fail(Result(ResultCode::InvalidArgument, "no configuration"));
+            return Result(ResultCode::InvalidArgument, "no configuration");
         }
         Ref<IConfigAccess> access = Query<IConfigAccess>(config);
         if (!access) {
-            return Fail(Result(ResultCode::InvalidArgument, "foreign configuration object"));
+            return Result(ResultCode::InvalidArgument, "foreign configuration object");
         }
         const VkVideoEncoderConfig& in = access->ExtConfig();
 
         std::lock_guard<std::mutex> lock(m_configMutex);
 
         if (const char* immutable = FirstImmutableChange(in)) {
-            RecordDetail(immutable);
-            return Fail(Result(ResultCode::UnsupportedFeature,
-                               "this field cannot change without a new session"));
+            return Result(ResultCode::UnsupportedFeature, immutable);
         }
 
         // Start from what the session is running, and overlay only what moves.
@@ -1023,13 +841,13 @@ public:
 
         if (next.averageBitrate == 0 &&
             next.rateControlMode != VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
-            return Fail(Result(ResultCode::InvalidArgument,
-                               "a rate-controlled session needs a non-zero average bitrate"));
+            return Result(ResultCode::InvalidArgument,
+                          "a rate-controlled session needs a non-zero average bitrate");
         }
 
         const VkResult result = m_encoder->Reconfigure(next);
         if (result != VK_SUCCESS) {
-            return Fail(FromVkResult(result, "the session refused this reconfiguration"));
+            return FromVkResult(result, "the session refused this reconfiguration");
         }
         m_config = next;
         return Result();
@@ -1037,8 +855,8 @@ public:
 
     Result Drain() override
     {
-        return Fail(FromVkResult(m_encoder->DrainPendingFrames(),
-                                 "the drain did not complete"));
+        return FromVkResult(m_encoder->DrainPendingFrames(),
+                            "the drain did not complete");
     }
 
     Result Finish() override
@@ -1046,7 +864,7 @@ public:
         // The underlying Flush is the terminal one: it releases the encoder on
         // the way out, which is why Drain above is a different call and not a
         // parameter of this one.
-        return Fail(FromVkResult(m_encoder->Flush(), "the stream could not be ended"));
+        return FromVkResult(m_encoder->Flush(), "the stream could not be ended");
     }
 
     Expected<uint32_t> AbandonAll() override
@@ -1054,7 +872,7 @@ public:
         uint32_t abandoned = 0;
         const VkResult result = m_encoder->AbandonAllFrames(&abandoned);
         if (result != VK_SUCCESS) {
-            return Fail(FromVkResult(result, "abandon failed"));
+            return FromVkResult(result, "abandon failed");
         }
         return abandoned;
     }
@@ -1070,24 +888,9 @@ public:
         Unpack(frame.waitSemaphores, waitSems, waitVals);
         Unpack(frame.signalSemaphores, signalSems, signalVals);
 
-        if (frame.registeredImage != kNoResource) {
-            return SubmitRegistered(frame, waitSems, waitVals, signalSems, signalVals);
-        }
-
-        // Same fence pair as the registered path: an inline image has the same
-        // producer-ordering problem, and answering it on only one of the two
-        // paths would make the choice of path change the semantics.
-        VkVideoEncoderFrameFenceDescriptor fences;
-        fences.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_FENCE_DESCRIPTOR;
-        fences.pNext = nullptr;
-        fences.acquireFenceFd  = frame.acquireFenceFd;
-        fences.pReleaseFenceFd = frame.releaseFenceFd;
-        const bool wantFences =
-            (frame.acquireFenceFd >= 0) || (frame.releaseFenceFd != nullptr);
-
         VkVideoEncodeInputFrame in{};
         in.sType  = VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_FRAME;
-        in.pNext  = wantFences ? &fences : nullptr;
+        in.pNext  = nullptr;
         in.image  = frame.image.existingImage;
         in.format = frame.image.format;
         in.width  = frame.image.width;
@@ -1108,65 +911,12 @@ public:
         in.pSignalSemaphoreValues = signalVals.empty() ? nullptr : signalVals.data();
 
         const VkResult result = m_encoder->SubmitExternalFrame(in, nullptr);
-        if (result == VK_SUCCESS) {
-            ++m_framesSubmitted;
-        }
-        return Fail(FromVkResult(result, "frame submission failed"));
-    }
-
-    // A frame whose image was registered earlier. The registration already
-    // holds the import, so this path costs no image creation -- which is the
-    // reason a compositor registers at all.
-    Result SubmitRegistered(const FrameSubmit&              frame,
-                            const std::vector<VkSemaphore>& waitSems,
-                            const std::vector<uint64_t>&    waitVals,
-                            const std::vector<VkSemaphore>& signalSems,
-                            const std::vector<uint64_t>&    signalVals)
-    {
-        // The fence pair is a chained structure on this API. It lives for the
-        // duration of the call, which is all the library needs: it consumes
-        // the acquire fd and writes the release fd synchronously.
-        VkVideoEncoderFrameFenceDescriptor fences;
-        fences.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_FENCE_DESCRIPTOR;
-        fences.pNext = nullptr;
-        fences.acquireFenceFd   = frame.acquireFenceFd;
-        fences.pReleaseFenceFd  = frame.releaseFenceFd;
-        const bool wantFences =
-            (frame.acquireFenceFd >= 0) || (frame.releaseFenceFd != nullptr);
-
-        VkVideoEncoderFrameSubmitInfo info;
-        info.sType    = VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_PARAMS;
-        info.resource = static_cast<VkVideoEncoderResource>(frame.registeredImage);
-        info.frameId  = frame.frameId;
-        info.pts      = frame.pts;
-        info.forceIDR = frame.forceIdr ? VK_TRUE : VK_FALSE;
-        info.isLastFrame = frame.isLastFrame ? VK_TRUE : VK_FALSE;
-        info.qpOverride = LowerQpOverride(frame);
-        // UNDEFINED asks the encoder to use the layout declared at
-        // registration, which is what a caller that has not moved the image
-        // wants.
-        info.currentLayout = frame.image.layout;
-        info.pNext = wantFences ? &fences : nullptr;
-
-        info.waitSemaphoreCount   = static_cast<uint32_t>(waitSems.size());
-        info.pWaitSemaphores      = waitSems.empty() ? nullptr : waitSems.data();
-        info.pWaitSemaphoreValues = waitVals.empty() ? nullptr : waitVals.data();
-        info.signalSemaphoreCount   = static_cast<uint32_t>(signalSems.size());
-        info.pSignalSemaphores      = signalSems.empty() ? nullptr : signalSems.data();
-        info.pSignalSemaphoreValues = signalVals.empty() ? nullptr : signalVals.data();
-
-        const VkVideoEncoderStatusCode code =
-            m_encoder->SubmitRegisteredFrame(info, nullptr);
-        if (code == VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            ++m_framesSubmitted;
-        }
-        RecordCode("registered frame submission failed", code);
-        return Fail(FromExtStatusCode(code, "registered frame submission failed"));
+        return FromVkResult(result, "frame submission failed");
     }
 
     Result CancelFrame(uint64_t frameId) override
     {
-        return Fail(FromVkResult(m_encoder->CancelFrame(frameId), "frame is not cancellable"));
+        return FromVkResult(m_encoder->CancelFrame(frameId), "frame is not cancellable");
     }
 
     FrameState GetFrameState(uint64_t frameId) const override
@@ -1182,9 +932,8 @@ public:
         out.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_ENCODE_RESULT;
         const VkResult result = m_encoder->AcquireNextEncodedFrame(out);
         if (result != VK_SUCCESS) {
-            return Fail(FromVkResult(result, "no encoded frame is ready"));
+            return FromVkResult(result, "no encoded frame is ready");
         }
-        ++m_framesEncoded;
         return FromExtResult(out);
     }
 
@@ -1194,291 +943,14 @@ public:
         out.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_ENCODE_RESULT;
         const VkResult result = m_encoder->AcquireEncodedFrame(frameId, out);
         if (result != VK_SUCCESS) {
-            return Fail(FromVkResult(result, "that frame is not ready"));
+            return FromVkResult(result, "that frame is not ready");
         }
-        ++m_framesEncoded;
         return FromExtResult(out);
     }
 
     void Release(uint64_t frameId) override
     {
         m_encoder->ReleaseEncodedFrame(frameId);
-    }
-
-    //---- ICompletionSignal --------------------------------------------------
-
-    Result SetCallback(CompletionCallback callback, void* userData,
-                       UserDataRelease release) override
-    {
-        // NEVER HOLD m_callbackMutex ACROSS THE LIBRARY CALL. Installing or
-        // clearing a callback is a quiesce point: it returns only once any
-        // in-flight invocation has returned. If that invocation were waiting
-        // on a lock held here, the two would wait on each other. The
-        // trampolines below take no adapter lock at all, which is what keeps
-        // that true even while a replacement is in progress.
-        //
-        // Keep this session and its encoder alive for the whole method. A
-        // client release runs synchronously inside the lower call, and a
-        // release handler that drops the caller's last Ref would otherwise
-        // destroy the object executing this line.
-        const Ref<SessionImpl>                       self = shared_from_this();
-        const VkSharedBaseObj<VulkanVideoEncoderExt> encoder = m_encoder;
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            if (m_closing) {
-                return Fail(Result(ResultCode::NotConfigured,
-                                   "the session is shutting down"));
-            }
-        }
-
-        if (callback == nullptr) {
-            // Detach at the library. Once it returns, no trampoline can be
-            // running and the cookie has been handed back to
-            // TrampolineRelease -- which is what makes the promise that a
-            // caller may destroy whatever userData referenced once this
-            // returns.
-            //
-            // A refused detach leaves the OLD registration installed. Do not
-            // record the session as callback-free in that case: the caller
-            // must be told its cookie is still reachable.
-            const Result detached = Fail(FromVkResult(
-                encoder->SetCompletionCallback(nullptr, nullptr, nullptr),
-                "the completion callback could not be cleared"));
-            if (detached.ok()) {
-                std::lock_guard<std::mutex> lock(m_callbackMutex);
-                m_hasCallback = false;
-            }
-            return detached;
-        }
-
-        // The cookie is a state object the lower layer owns, never this
-        // session. Allocate it before the detach so a failed allocation
-        // cannot leave the session with no callback at all.
-        CallbackState* state = new (std::nothrow)
-            CallbackState(callback, userData, release);
-        if (state == nullptr) {
-            return Fail(Result(ResultCode::OutOfResources,
-                               "the completion callback state could not be "
-                               "allocated"));
-        }
-
-        // Replacing one callback with another goes through a detach, so no
-        // in-flight invocation can straddle the change and deliver the new
-        // cookie to the old callback. The library sees the same trampoline
-        // pointer either way and would not quiesce on its own.
-        bool hadCallback = false;
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            hadCallback = m_hasCallback;
-        }
-        if (hadCallback) {
-            // A refused detach means the old registration is still live.
-            // Installing over it would strand the old cookie, whose release
-            // the encoder would then never call. Refuse, and destroy the
-            // state this call allocated rather than the one still in use.
-            const Result detached = Fail(FromVkResult(
-                encoder->SetCompletionCallback(nullptr, nullptr, nullptr),
-                "the previous completion callback could not be replaced"));
-            if (!detached.ok()) {
-                delete state;
-                return detached;
-            }
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            m_hasCallback = false;
-        }
-
-        // ALWAYS install the release thunk, even when the client supplied no
-        // release of its own: the thunk is what frees the state object. With
-        // nullptr here the encoder would drop the cookie on the floor at
-        // detach and every SetCallback would leak one.
-        const Result installed = Fail(FromVkResult(
-            encoder->SetCompletionCallback(&SessionImpl::TrampolineCallback,
-                                           state,
-                                           &SessionImpl::TrampolineRelease),
-            "the completion callback could not be installed"));
-        if (!installed.ok()) {
-            // Ownership transfers only on success. A refused installation
-            // never reached the encoder, so nothing else will free this.
-            delete state;
-            return installed;
-        }
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            m_hasCallback = true;
-        }
-        return installed;
-    }
-
-    uint64_t CompletedCount() const override
-    {
-        return m_encoder->GetCompletionCounter();
-    }
-
-    //---- IShutdownDiagnostics -----------------------------------------------
-
-    ShutdownSnapshot Shutdown() const override
-    {
-        VkVideoEncoderShutdownInfo info{};
-        m_encoder->GetShutdownInfo(&info);
-
-        ShutdownSnapshot out;
-        switch (info.disposition) {
-        case VK_VIDEO_ENCODER_SHUTDOWN_IDLE:
-            out.disposition = ShutdownDisposition::Idle;
-            break;
-        case VK_VIDEO_ENCODER_SHUTDOWN_LOST_DEVICE_RETIRED:
-            out.disposition = ShutdownDisposition::LostDeviceRetired;
-            break;
-        default:
-            out.disposition = ShutdownDisposition::Unproven;
-            break;
-        }
-        out.firstError = FromVkResult(info.firstError, "").code();
-        out.workersJoined      = (info.workersJoined != VK_FALSE);
-        out.callbackDetached   = (info.callbackDetached != VK_FALSE);
-        out.deviceLostObserved = (info.deviceLostObserved != VK_FALSE);
-        out.complete           = (info.shutdownComplete != VK_FALSE);
-        return out;
-    }
-
-    VkSemaphore CompletionSemaphore() const override
-    {
-        return m_encoder->GetCompletionSemaphore();
-    }
-
-    Expected<int> ExportCompletionHandle() override
-    {
-        uint64_t handle = 0;
-        const VkVideoEncoderStatusCode code = m_encoder->GetCompletionEventHandle(&handle);
-        if (code != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            return Fail(FromExtStatusCode(code, "no completion handle is available"));
-        }
-        // The lower layer's handle is BORROWED: the encoder signals through it
-        // and closes it at teardown. The interface hands the caller a close
-        // obligation, so each export must be a handle of its own. Returning the
-        // borrowed one makes a caller that honours the documented contract close
-        // the encoder's live event -- after which completions are written to a
-        // descriptor the process has since reused, and teardown closes it twice.
-        const uint64_t duplicate = vkenc::OsCompletionEventDuplicate(handle);
-        if (duplicate == vkenc::kOsCompletionEventNone) {
-            return Fail(Result(ResultCode::OutOfResources,
-                               "the completion handle could not be duplicated for export"));
-        }
-        return static_cast<int>(duplicate);
-    }
-
-    //---- IResourceRegistry --------------------------------------------------
-
-    Expected<ResourceId> RegisterImage(const ExternalImage& image,
-                                       bool* outHandleConsumed) override
-    {
-        if (outHandleConsumed != nullptr) {
-            *outHandleConsumed = false;
-        }
-        VkVideoEncoderExternalImageDescriptor desc;
-        uint64_t osHandle = 0;
-        ToExtImageDescriptor(image, desc, osHandle);
-
-        // The echo is written on every return, so it is read on every return.
-        VkVideoEncoderStatus echo;
-        echo.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_STATUS;
-        echo.pNext = nullptr;
-
-        VkVideoEncoderResource resource = VK_VIDEO_ENCODER_RESOURCE_NULL;
-        const VkVideoEncoderStatusCode code =
-            m_encoder->RegisterImageResource(desc, osHandle, &resource, &echo);
-
-        // Written before the refusal below, not after it: the echo's whole
-        // purpose is to be true on a path that returns no value.
-        if (outHandleConsumed != nullptr) {
-            *outHandleConsumed = (echo.handlesConsumed != VK_FALSE);
-        }
-
-        if (code != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            RecordCode("image could not be registered", code);
-            return Fail(FromExtStatusCode(code, "image could not be registered"));
-        }
-        return static_cast<ResourceId>(resource);
-    }
-
-    Result UnregisterImage(ResourceId id) override
-    {
-        if (id == kNoResource) {
-            return Fail(Result(ResultCode::InvalidArgument, "no such registered image"));
-        }
-        return Fail(FromExtStatusCode(
-            m_encoder->UnregisterImageResource(static_cast<VkVideoEncoderResource>(id)),
-            "image could not be unregistered"));
-    }
-
-    Expected<InputPath> QueryImageSupport(const ExternalImage& image) override
-    {
-        VkVideoEncoderExternalImageDescriptor desc;
-        uint64_t osHandle = 0;
-        ToExtImageDescriptor(image, desc, osHandle);
-
-        VkVideoEncoderImageSupport support{};
-        support.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMAGE_SUPPORT;
-        const VkVideoEncoderStatusCode code =
-            m_encoder->QueryImageSupport(desc, &support);
-        if (code != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            return Fail(FromExtStatusCode(code, "this image cannot be imported"));
-        }
-        // TWO ANSWERS, AND BOTH MEAN NO. The call reports whether it could be
-        // answered; the reply reports whether the image is usable. A query
-        // that was answered "no" returns SUCCESS, so reading only the status
-        // turns a refusal into an acceptance.
-        if (support.supported != VK_TRUE) {
-            return Fail(Result(ResultCode::UnsupportedFormat,
-                               "the encoder cannot take this image"));
-        }
-        const VkEncInputFormatClass cls =
-            VkEncClassifyInput(image.format, ToExtColorModel(image.colorModel));
-        return (cls == VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT) ? InputPath::Copy
-                                                             : InputPath::ComputeFilter;
-    }
-
-    Expected<ResourceId> RegisterSemaphore(const ExternalSemaphore& semaphore) override
-    {
-        VkVideoEncoderSemaphoreDescriptor desc;
-        desc.sType      = VK_VIDEO_ENCODER_STRUCTURE_TYPE_SEMAPHORE_DESCRIPTOR;
-        desc.pNext      = nullptr;
-        desc.handleType = ToExtHandleType(semaphore.handleType);
-        // Timeline only: a binary semaphore cannot report a completion to a
-        // consumer that was not already waiting when it was signalled.
-        desc.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-        desc.ownership     = ToExtOwnership(semaphore.ownership);
-
-        uint64_t osHandle = 0;
-        switch (semaphore.handleType) {
-        case ExternalHandleType::OpaqueFd:
-            osHandle = static_cast<uint64_t>(static_cast<uint32_t>(semaphore.fd));
-            break;
-        case ExternalHandleType::OpaqueWin32:
-            osHandle = reinterpret_cast<uint64_t>(semaphore.win32Handle);
-            break;
-        default:
-            return Fail(Result(ResultCode::InvalidArgument,
-                               "a semaphore needs an importable handle type"));
-        }
-
-        VkVideoEncoderResource resource = VK_VIDEO_ENCODER_RESOURCE_NULL;
-        const VkVideoEncoderStatusCode code =
-            m_encoder->RegisterSemaphore(desc, osHandle, &resource, nullptr);
-        if (code != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            return Fail(FromExtStatusCode(code, "semaphore could not be registered"));
-        }
-        return static_cast<ResourceId>(resource);
-    }
-
-    Result UnregisterSemaphore(ResourceId id) override
-    {
-        if (id == kNoResource) {
-            return Fail(Result(ResultCode::InvalidArgument, "no such registered semaphore"));
-        }
-        return Fail(FromExtStatusCode(
-            m_encoder->UnregisterSemaphore(static_cast<VkVideoEncoderResource>(id)),
-            "semaphore could not be unregistered"));
     }
 
     //---- IDeviceBinding -----------------------------------------------------
@@ -1513,176 +985,62 @@ public:
                                     outUuid);
     }
 
-    //---- IDiagnostics -------------------------------------------------------
-
-    RuntimeInfo GetRuntimeInfo() const override
-    {
-        RuntimeInfo out;
-        VkVideoEncoderRuntimeInfo info{};
-        info.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_RUNTIME_INFO;
-        if (m_encoder->GetRuntimeInfo(&info) != VK_SUCCESS) {
-            return out;
-        }
-        // The source is a fixed-width field that need not be terminated, so
-        // one byte is reserved for the terminator this side guarantees.
-        const size_t room = sizeof(out.implementationName) - 1;
-        std::copy(info.implementationName, info.implementationName + room,
-                  out.implementationName);
-        out.implementationName[room] = '\0';
-        out.isHardwareAccelerated    = info.isHardwareAccelerated != VK_FALSE;
-        out.supportsNativeHandle     = info.supportsNativeHandle != VK_FALSE;
-        out.trustedRateController    = info.trustedRateController != VK_FALSE;
-        out.supportsSimulcast        = info.supportsSimulcast != VK_FALSE;
-        out.supportsFrameSizeChange  = info.supportsFrameSizeChange != VK_FALSE;
-        out.reportsAverageQp         = info.reportsAverageQp != VK_FALSE;
-        out.applyAlignmentToAllSimulcastLayers =
-            info.applyAlignmentToAllSimulcastLayers != VK_FALSE;
-        out.resolutionAlignmentWidth =
-            info.requestedResolutionAlignmentWidth ? info.requestedResolutionAlignmentWidth : 1;
-        out.resolutionAlignmentHeight =
-            info.requestedResolutionAlignmentHeight ? info.requestedResolutionAlignmentHeight : 1;
-        return out;
-    }
-
-    const char* LastErrorDetail() const override
-    {
-        std::lock_guard<std::mutex> lock(m_errorMutex);
-        return m_lastError.c_str();
-    }
-
-    Expected<CompletionStats> GetCompletionStats() const override
-    {
-        VkVideoEncoderCompletionInfo info;
-        info.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_COMPLETION_INFO;
-
-        // The diagnostics ride in on the chain here so the caller receives one
-        // value rather than having to know that two structures exist.
-        VkVideoEncoderDiagnosticInfo diagnostics;
-        diagnostics.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_DIAGNOSTIC_INFO;
-        diagnostics.pNext = nullptr;
-        diagnostics.diagnosticCount = 0;
-        diagnostics.lastDiagnostic[0] = '\0';
-        info.pNext = &diagnostics;
-
-        const VkResult result = m_encoder->GetCompletionInfo(&info);
-        if (result != VK_SUCCESS) {
-            return Fail(FromVkResult(result, "the session has no completion accounting"));
-        }
-
-        CompletionStats stats;
-        stats.completionCounter = info.completionCounter;
-        stats.framesTimedOut    = info.framesTimedOut;
-        stats.lateCaptures      = info.lateCaptures;
-        stats.framesCancelled   = info.framesCancelled;
-        stats.framesPending     = info.framesPending;
-        stats.framesReady       = info.framesReady;
-        stats.framesAcquired    = info.framesAcquired;
-        stats.diagnosticCount   = diagnostics.diagnosticCount;
-
-        const size_t room = sizeof(stats.lastDiagnostic) - 1;
-        const size_t take = (VK_VIDEO_ENCODER_MAX_DIAGNOSTIC_CHARS - 1 < room)
-                                ? VK_VIDEO_ENCODER_MAX_DIAGNOSTIC_CHARS - 1
-                                : room;
-        std::copy(diagnostics.lastDiagnostic, diagnostics.lastDiagnostic + take,
-                  stats.lastDiagnostic);
-        stats.lastDiagnostic[take] = '\0';
-        return stats;
-    }
-
-    uint64_t FramesSubmitted() const override { return m_framesSubmitted; }
-    uint64_t FramesEncoded() const override   { return m_framesEncoded; }
-
 private:
     // The first field that is both stated by the caller and different from
-    // what the session runs, or null when nothing immutable moves. An unset
-    // field is not a change: it is the absence of one.
+    // what the session runs, as the literal a refusal carries -- it names the
+    // field -- or null when nothing immutable moves. An unset field is not a
+    // change: it is the absence of one.
     const char* FirstImmutableChange(const VkVideoEncoderConfig& in) const
     {
-        if (in.codec != m_config.codec)     { return "codec"; }
-        if (in.profile != m_config.profile) { return "profile"; }
+        if (in.codec != m_config.codec) {
+            return "codec cannot change without a new session";
+        }
+        if (in.profile != m_config.profile) {
+            return "profile cannot change without a new session";
+        }
         if (in.encodeWidth != 0 && in.encodeWidth != m_config.encodeWidth) {
-            return "coded width";
+            return "coded width cannot change without a new session";
         }
         if (in.encodeHeight != 0 && in.encodeHeight != m_config.encodeHeight) {
-            return "coded height";
+            return "coded height cannot change without a new session";
         }
         if (in.inputFormat != VK_FORMAT_UNDEFINED &&
             in.inputFormat != m_config.inputFormat) {
-            return "input format";
+            return "input format cannot change without a new session";
         }
         if (in.rateControlMode != VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DEFAULT_KHR &&
             in.rateControlMode != m_config.rateControlMode) {
-            return "rate control mode";
+            return "rate control mode cannot change without a new session";
         }
         // 2 is "unspecified" in every one of these code points, and is what an
         // untouched configuration carries.
         if (in.colourPrimaries != 2 && in.colourPrimaries != m_config.colourPrimaries) {
-            return "colour primaries";
+            return "colour primaries cannot change without a new session";
         }
         if (in.transferCharacteristics != 2 &&
             in.transferCharacteristics != m_config.transferCharacteristics) {
-            return "transfer characteristics";
+            return "transfer characteristics cannot change without a new session";
         }
         if (in.matrixCoefficients != 2 &&
             in.matrixCoefficients != m_config.matrixCoefficients) {
-            return "matrix coefficients";
+            return "matrix coefficients cannot change without a new session";
         }
         if (in.gopLength != 0 && in.gopLength != m_config.gopLength) {
-            return "GOP length";
+            return "GOP length cannot change without a new session";
         }
         if (in.qualityLevel != 0 && in.qualityLevel != m_config.qualityLevel) {
-            return "quality level";
+            return "quality level cannot change without a new session";
         }
         return nullptr;
-    }
-
-    void RecordDetail(const char* what) const
-    {
-        std::lock_guard<std::mutex> lock(m_errorMutex);
-        m_lastError = std::string("cannot change ") + what + " without a new session";
-        m_lastErrorPinned = true;
-    }
-
-    // The encoder hands back the cookie it was given, which is a
-    // CallbackState and never this session. The lower layer owns it from a
-    // successful SetCompletionCallback until it hands it here, exactly once,
-    // after any in-flight invocation has returned -- on replacement, on
-    // detach, or at encoder destruction. This is the only place it is freed.
-    static void TrampolineRelease(void* userData) VK_VIDEO_ENCODER_CB_NOEXCEPT
-    {
-        CallbackState* state = static_cast<CallbackState*>(userData);
-        if (state == nullptr) {
-            return;
-        }
-        if (state->release != nullptr) {
-            state->release(state->userData);
-        }
-        delete state;
-    }
-
-    // Reads immutable state through a pointer the encoder guarantees is live
-    // for the duration of the call. It deliberately touches no session member
-    // and takes no session lock: a session destroyed while the encoder is
-    // still draining must not turn a completion into a use-after-free, and a
-    // trampoline that waited on an adapter lock would deadlock against the
-    // quiesce point in SetCallback.
-    static void TrampolineCallback(uint64_t frameId, void* userData)
-        VK_VIDEO_ENCODER_CB_NOEXCEPT
-    {
-        const CallbackState* state = static_cast<const CallbackState*>(userData);
-        if (state != nullptr && state->callback != nullptr) {
-            state->callback(frameId, state->userData);
-        }
     }
 
     // The ONE place the public flag/value pair becomes a lower-layer field.
     //
     // -1 is the lower layer's "no override". Zero is not: it is a legitimate
     // constant QP a caller may ask for deliberately, which is exactly why the
-    // public contract carries a separate hasQpOverride flag. The two arms
-    // disagreed here -- the inline arm sent 0 for an unset override, so a
-    // caller that never asked for one had every inline frame encoded at QP 0
-    // while the same submission through the registered arm behaved correctly.
+    // public contract carries a separate hasQpOverride flag. An unset
+    // override that reached the encoder as 0 would encode every frame at
+    // QP 0.
     //
     // The sentinel is documented at this boundary and nowhere else: the
     // public default stays zero, and an intentional QP of zero still reaches
@@ -1721,37 +1079,6 @@ private:
         return out;
     }
 
-    // The status code a Result cannot carry -- its detail is a literal --
-    // recorded where IDiagnostics can hand it back. This is the split the
-    // interface promises: literal in Result, runtime context in IDiagnostics.
-    void RecordCode(const char* what, VkVideoEncoderStatusCode code) const
-    {
-        if (code == VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            return;
-        }
-        std::lock_guard<std::mutex> lock(m_errorMutex);
-        m_lastError = std::string(what) + " (encoder status " +
-                      std::to_string(static_cast<int>(code)) + ")";
-        m_lastErrorPinned = true;
-    }
-
-    // Every failing Result also lands in LastErrorDetail, which is where the
-    // runtime context Result deliberately omits can be recovered from.
-    const Result& Fail(const Result& status) const
-    {
-        if (!status.ok()) {
-            std::lock_guard<std::mutex> lock(m_errorMutex);
-            if (m_lastErrorPinned) {
-                // RecordCode already wrote the fuller message for this
-                // failure; do not overwrite it with the literal.
-                m_lastErrorPinned = false;
-            } else {
-                m_lastError = status.detail();
-            }
-        }
-        return status;
-    }
-
     VkSharedBaseObj<VulkanVideoEncoderExt> m_encoder;
 
     // What the session is running. Reconfigure overlays onto this rather than
@@ -1759,39 +1086,13 @@ private:
     // the change.
     std::mutex           m_configMutex;
     VkVideoEncoderConfig m_config;
-
-    mutable std::mutex  m_errorMutex;
-    mutable std::string m_lastError;
-    mutable bool        m_lastErrorPinned = false;
-
-    // What the lower layer holds while a callback is installed. Immutable
-    // once constructed, so the trampolines read it without a lock; owned by
-    // the encoder, so it outlives this session whenever the encoder does.
-    struct CallbackState {
-        CallbackState(CompletionCallback cb, void* data, UserDataRelease rel)
-            : callback(cb), userData(data), release(rel) { }
-
-        const CompletionCallback callback;
-        void* const              userData;
-        const UserDataRelease    release;
-    };
-
-    // Guards only the two bookkeeping bits below. The callback itself is not
-    // reachable from here on purpose -- see TrampolineCallback.
-    std::mutex m_callbackMutex;
-    bool       m_hasCallback = false;
-    bool       m_closing     = false;
-
-    uint64_t m_framesSubmitted = 0;
-    uint64_t m_framesEncoded   = 0;
 };
 
 //=============================================================================
 // PLATFORM
 //=============================================================================
 
-class PlatformImpl final : public IEncoderPlatform,
-                          public IPlatformLifetime {
+class PlatformImpl final : public IEncoderPlatform {
 public:
     PlatformImpl(const PlatformCreateInfo&                        info,
                  const VkSharedBaseObj<VulkanVideoEncoderContext>& context)
@@ -1808,17 +1109,8 @@ public:
         if (id == IEncoderPlatform::kId) {
             return static_cast<IEncoderPlatform*>(this);
         }
-        if (id == IPlatformLifetime::kId) {
-            return static_cast<IPlatformLifetime*>(this);
-        }
         return nullptr;
     }
-
-    // Releases the process-wide floor reference, not this platform: the
-    // instance being destroyed is shared by every platform built for this
-    // device, which is why retiring it is a request a caller has to make
-    // rather than something a single platform's destructor may do.
-    uint32_t Retire() override { return VkEncRetireOwnContexts(); }
 
     Ref<IEncoderCaps>   Caps() const override          { return m_caps; }
     Ref<IDeviceBinding> DeviceBinding() const override { return m_binding; }
@@ -1930,10 +1222,10 @@ private:
 //=============================================================================
 // FORMAT CLASSIFICATION
 //
-// The four questions a host asks about a format before it allocates -- can you
-// take this, by which route, what does the filter need of my image, and what
-// will the session run at -- answered once, from the library's own routing
-// tables rather than from a copy of them in the caller.
+// The questions a host asks about a format before it allocates -- can you
+// take this, by which route, and what will the session run at -- answered
+// once, from the library's own routing tables rather than from a copy of them
+// in the caller.
 //=============================================================================
 
 extern "C" VK_ENC_EXPORT
@@ -1951,38 +1243,20 @@ VkResult VkEncClassifyFormat(VkFormat                       format,
     const VkVideoEncoderColorModel model = ToExtColorModel(colorModel);
     const VkEncInputFormatClass    cls   = VkEncClassifyInput(format, model);
 
-    if (cls == VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+    // A format the encoder reaches only through the compute filter is
+    // refused with the formats it cannot take at all: Validate refuses both,
+    // because a submitted frame is read directly or copied and the filter
+    // never runs on it.
+    if (cls != VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT) {
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
-    outRouting->supported = true;
-
-    if (cls == VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT) {
-        // The encoder reads these samples as they are. A copy may still move
-        // them, but nothing rewrites one.
-        outRouting->path          = InputPath::Copy;
-        outRouting->filterAccess  = FilterAccess::NoFilter;
-        outRouting->sessionFormat = format;
-        return VK_SUCCESS;
-    }
-
-    outRouting->path = InputPath::ComputeFilter;
-
-    // How the filter must reach the source. A planar source is addressed one
-    // plane at a time; a single-plane source -- packed YCbCr or RGB -- is read
-    // as one storage image. The distinction decides what usage and what view
-    // formats the caller's image needs, which is why it is answered here
-    // rather than inferred by each host from a format list of its own.
-    outRouting->filterAccess = (VkEncInputFormatPlaneCount(format) > 1)
-                                   ? FilterAccess::PlaneStorage
-                                   : FilterAccess::StorageRead;
-
-    // Without a device list the conversion target is knowable only where it
-    // does not depend on one. It does for RGB, whose session takes the
-    // device's first advertised encode-source format.
-    outRouting->sessionFormat =
-        VkEncConversionTargetFormat(format, nullptr, 0);
-
+    // The encoder reads these samples as they are. A copy may still move
+    // them, but nothing rewrites one.
+    outRouting->supported     = true;
+    outRouting->path          = InputPath::Copy;
+    outRouting->filterAccess  = FilterAccess::NoFilter;
+    outRouting->sessionFormat = format;
     return VK_SUCCESS;
 }
 

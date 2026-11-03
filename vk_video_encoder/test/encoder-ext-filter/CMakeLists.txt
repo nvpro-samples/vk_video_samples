@@ -84,11 +84,9 @@ install(TARGETS ${PROJECT_NAME}
 # Add tests.
 #
 # NOTE ON CTest SEMANTICS, matching the sibling library tests: 0 means every
-# assertion held, 1 means an assertion failed, and 2 -- reachable only from
-# the registration-gate entry below -- means the session it needs could not be
-# stood up at all, deliberately a FAILURE and not a skip. There is no GPU,
-# driver or display dependence in either entry, so there is no skip arm and a
-# failure to run is a failure.
+# assertion held and 1 means an assertion failed. There is no GPU, driver or
+# display dependence, so there is no skip arm and a failure to run is a
+# failure.
 enable_testing()
 
 # The taxonomy, the preprocess decision, the transfer-function declaration and
@@ -97,17 +95,6 @@ add_test(NAME EncoderExtInputFormatTaxonomy
          COMMAND ${PROJECT_NAME})
 # LABELS: this is the CI gating set. See the top-level CMakeLists.txt note.
 set_tests_properties(EncoderExtInputFormatTaxonomy PROPERTIES
-                     LABELS "device-free")
-
-# The colour-model declaration where a producer meets it: the registration
-# gate. A separate entry because it is the one group in this binary that
-# stands up an encoder session -- a null-backend one, so still device-free --
-# and a session that fails to open must be reported as itself rather than as a
-# taxonomy failure. The library answers the same on a session that has
-# negotiated nothing, which is what makes the gate testable here at all.
-add_test(NAME EncoderExtColorModelRegistrationGate
-         COMMAND ${PROJECT_NAME} --registration)
-set_tests_properties(EncoderExtColorModelRegistrationGate PROPERTIES
                      LABELS "device-free")
 
 message(STATUS "encoder_ext_filter_test: Configured")
