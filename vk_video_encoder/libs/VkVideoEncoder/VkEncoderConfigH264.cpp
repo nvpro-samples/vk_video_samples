@@ -51,6 +51,20 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
                 LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--maxNumRefFrames") {
+            if (++i >= argc) {
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            char* end = nullptr;
+            const long refs = strtol(args[i].c_str(), &end, 10);
+            if ((end == args[i].c_str()) || (*end != '\0') || (refs < 1) || (refs > 16)) {
+                LOG_ERROR("%s takes 1 to 16 reference frames, not %s\n", args[i - 1].c_str(), args[i].c_str());
+                return -1;
+            }
+            // Set before InitializeParameters(), whose level selection needs a DPB that holds them.
+            maxNumRefFramesOption = static_cast<uint8_t>(refs);
+            numRefFrames = maxNumRefFramesOption;
         } else if (args[i] == "--profile") {
             if (++i >= argc) {
                 LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
@@ -350,7 +364,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     sps->log2_max_frame_num_minus4 = 4;
     sps->log2_max_pic_order_cnt_lsb_minus4 = 4;
 
-    sps->max_num_ref_frames = numRefL0 + numRefL1;
+    sps->max_num_ref_frames = numRefFrames;
 
     // Initialize PPS values
     pps->seq_parameter_set_id = sps->seq_parameter_set_id;
@@ -572,7 +586,15 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     }
     numRefL0 = h264QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h264QualityLevelProperties.preferredMaxL1ReferenceCount;
-    numRefFrames = numRefL0 + numRefL1;
+    // The DPB keeps the frames the reference lists draw on: the device's preferred L0 and L1 counts,
+    // or more with --maxNumRefFrames.
+    numRefFrames = std::max<uint8_t>(maxNumRefFramesOption, static_cast<uint8_t>(numRefL0 + numRefL1));
+    if ((maxNumRefFramesOption != 0) && (numRefFrames != maxNumRefFramesOption)) {
+        LOG_S_INFO << "[EncoderConfigH264] --maxNumRefFrames " << static_cast<uint32_t>(maxNumRefFramesOption)
+                   << " is below the " << static_cast<uint32_t>(numRefFrames)
+                   << " reference frames of the device's preferred lists; keeping " << static_cast<uint32_t>(numRefFrames)
+                   << std::endl;
+    }
     // The device's preferred entropy coder, clamped to what the selected
     // profile permits.
     //
@@ -711,8 +733,8 @@ void EncoderConfigH264::InitProfileLevel()
 int8_t EncoderConfigH264::InitDpbCount()
 {
     // Need-based DPB sizing: size the DPB by the references this encoder
-    // will actually use (numRefFrames = numRefL0 + numRefL1, populated from
-    // the driver's preferred quality-level properties) instead of leaving
+    // will actually use (numRefFrames: numRefL0 + numRefL1 from the driver's
+    // preferred quality-level properties, or --maxNumRefFrames) instead of leaving
     // dpbCount at 0, which selected the LEVEL-MAX DPB below -- 16+1 slots at
     // Level >= 5.0 for a sliding-window encode that uses ~3 references,
     // wasting ~12 full-resolution DPB images. If the quality-level query has
