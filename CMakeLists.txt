@@ -683,6 +683,11 @@ if(BUILD_ENCODER)
             add_subdirectory(vk_video_encoder/test/encoder-interface)
         endif()
         add_subdirectory(vk_video_encoder/test/encoder-drain)
+        # SYNC_FD acquire and release fences on the encode queue and on the
+        # staging queue.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-sync-fd)
+        endif()
         # The device probe's skip-or-fail verdict, without a device.
         add_subdirectory(vk_video_encoder/test/encode-device-probe)
 
