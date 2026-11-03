@@ -92,6 +92,10 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import platform
 
+# The ffmpeg that decodes and measures: --ffmpeg, else $FFMPEG, else the one on PATH. VMAF needs a
+# build with libvmaf, which distribution packages often lack.
+FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
+
 
 def detect_platform():
     """Detect the current platform."""
@@ -356,7 +360,7 @@ def calculate_psnr(
     """Calculate PSNR using ffmpeg. Returns ((y, u, v, avg, min, max), command_line)."""
     
     cmd = [
-        "ffmpeg",
+        FFMPEG,
         "-s", f"{width}x{height}",
         "-pix_fmt", "yuv420p",
         "-i", str(decoded_yuv),
@@ -408,7 +412,7 @@ def calculate_vmaf(
     """Calculate VMAF using ffmpeg. Returns (VMAF score, command_line)."""
     
     cmd = [
-        "ffmpeg",
+        FFMPEG,
         "-s", f"{width}x{height}",
         "-pix_fmt", "yuv420p",
         "-i", str(decoded_yuv),
@@ -440,13 +444,20 @@ def calculate_vmaf(
 def decode_to_yuv(
     encoded_file: Path,
     output_yuv: Path,
+    width: int,
+    height: int,
     verbose: bool = False
 ) -> Tuple[bool, str]:
-    """Decode an encoded file to raw YUV using ffmpeg. Returns (success, command_line)."""
+    """Decode an encoded file to raw YUV using ffmpeg. Returns (success, command_line).
+
+    Decoders output the coded frame size. An AV1 stream codes it aligned (1920x1088 for 1080p)
+    and carries the source size only as its render size, so every decode is cropped to
+    width x height, the size of the reference it is compared with."""
     
     cmd = [
-        "ffmpeg", "-y",
+        FFMPEG, "-y",
         "-i", str(encoded_file),
+        "-vf", f"crop={width}:{height}:0:0",
         "-f", "rawvideo",
         "-pix_fmt", "yuv420p",
         str(output_yuv)
@@ -508,7 +519,7 @@ def calculate_quality_metrics(
     if verbose:
         print(f"    Decoding {result.output_file.name}...")
     
-    decode_success, decode_cmd = decode_to_yuv(result.output_file, decoded_yuv, verbose)
+    decode_success, decode_cmd = decode_to_yuv(result.output_file, decoded_yuv, width, height, verbose)
     result.decode_command = decode_cmd
     
     if not decode_success:
@@ -825,6 +836,7 @@ def save_json_results(
 
 
 def main():
+    global FFMPEG
     parser = argparse.ArgumentParser(
         description="""
 AQ Quality Benchmark - Comprehensive Adaptive Quantization Testing Tool
@@ -1007,10 +1019,13 @@ For more information, see README-AQ.md in the vulkan-video-samples repository.
                        help="Skip VMAF calculation for faster benchmarks (PSNR only)")
     bench.add_argument("--skip-psnr", action="store_true", 
                        help="Skip PSNR calculation (not recommended)")
+    bench.add_argument("--ffmpeg", default=FFMPEG,
+                       help="ffmpeg executable for decoding, PSNR and VMAF (default: $FFMPEG or ffmpeg on PATH)")
     bench.add_argument("--verbose", action="store_true", 
                        help="Enable verbose output with detailed progress")
     
     args = parser.parse_args()
+    FFMPEG = args.ffmpeg
     
     # Validate input
     if not args.input.exists():
