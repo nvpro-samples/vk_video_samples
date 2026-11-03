@@ -6589,7 +6589,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         }
     }
 
-    // Completion timeline (ext currency 3): one monotonic GPU signal per
+    // Completion timeline: one monotonic GPU signal per
     // ordered batch, at the same flush points as the input-release timeline
     // above and for the same reason -- encode order is not input order
     // under B-frames, and a timeline may not signal non-monotonically.
@@ -7004,7 +7004,8 @@ bool VkVideoEncoder::DrainAndRestartThreads()
     return StartAssemblyThreads();
 }
 
-// Ext currency 3 (see the ext header): one library-owned timeline per
+// The completion timeline (VulkanVideoEncoderExt::
+// GetCompletionTimelineSemaphore): one library-owned timeline per
 // session, GPU-signaled at queue flush points in SubmitVideoCodingCmds.
 // Idempotent; runs on the session-serial thread before any submit.
 VkResult VkVideoEncoder::CreateCompletionTimelineSemaphore()
@@ -7081,7 +7082,7 @@ int32_t VkVideoEncoder::DeinitEncoder()
          m_hwLoadBalancingTimelineSemaphore = VK_NULL_HANDLE;
     }
 
-    // Completion timeline (ext currency 3): the same lifecycle discipline
+    // Completion timeline: the same lifecycle discipline
     // as the load-balancing timeline above -- WaitForThreadsToComplete()
     // and the ENCODE queue wait-idle have already run, so no submitted
     // batch can still reference it

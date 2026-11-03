@@ -832,9 +832,10 @@ public:
         return (size_t)((cycle > 0) ? cycle : 1u);
     }
 
-    // Create the completion timeline semaphore (ext currency 3; idempotent).
-    // Called by the ext layer at initialization, on the session-serial
-    // thread, before any submit. Exportability is a physical-device
+    // Create the completion timeline semaphore (idempotent). Called by the
+    // ext layer at initialization, on the session-serial thread, before any
+    // submit; its contract is VulkanVideoEncoderExt::
+    // GetCompletionTimelineSemaphore. Exportability is a physical-device
     // property, queried rather than assumed; when the answer is no, the
     // semaphore is created plain and export is refused by type at the ext
     // layer.
@@ -1730,10 +1731,10 @@ protected:
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
     VkSemaphore                              m_hwLoadBalancingTimelineSemaphore;
     int32_t                                  m_currentVideoQueueIndx;
-    // Completion timeline (ext API currency 3): created by the ext layer at
-    // init, before any submit -- which is what lets the submit path read
-    // the handle without a lock; GPU-signaled at queue flush points with
-    // max(externalFrameId)+1. GPU ordering only -- see the ext header.
+    // Completion timeline: created by the ext layer at init, before any
+    // submit -- which is what lets the submit path read the handle without a
+    // lock; GPU-signaled at queue flush points with max(externalFrameId)+1.
+    // See VulkanVideoEncoderExt::GetCompletionTimelineSemaphore.
     VkSemaphore                              m_completionTimelineSemaphore;
     bool                                     m_completionSemaphoreExportable;
     uint64_t                                 m_maxSubmittedCompletionValue;

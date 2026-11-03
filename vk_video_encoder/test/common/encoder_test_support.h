@@ -340,9 +340,11 @@ struct Session {
     vk::video::enc::Ref<vk::video::enc::IDeviceBinding>     binding;
 
     // |platformInfo| names the instance and physical device a caller adopts;
-    // left at its defaults, the library creates its own.
+    // left at its defaults, the library creates its own. |gop|, when given,
+    // is the configuration's GOP structure; absent, the library's default.
     Opened Open(uint32_t width, uint32_t height, const char** why,
-                vk::video::enc::PlatformCreateInfo platformInfo = {})
+                vk::video::enc::PlatformCreateInfo platformInfo = {},
+                const vk::video::enc::GopStructure* gop = nullptr)
     {
         using namespace vk::video::enc;
 
@@ -370,6 +372,9 @@ struct Session {
                .SetFrameRate(30, 1)
                .SetInputFormat(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, ColorModel::YCbCr)
                .SetRateControl(rate);
+        if (gop != nullptr) {
+            config->SetGop(*gop);
+        }
 
         Expected<Ref<IEncoderSession>> opened = platform->CreateSession(config);
         if (!opened) {

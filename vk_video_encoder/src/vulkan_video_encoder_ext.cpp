@@ -189,6 +189,8 @@ public:
     VkResult WaitWholeDeviceLocked();
     VkResult DrainPendingFrames() override;
     VkResult Reconfigure(const VkVideoEncoderConfig& config) override;
+    VkSemaphore GetCompletionTimelineSemaphore() const override;
+    VkVideoEncoderStatusCode ExportCompletionTimelineFd(int* pFd) override;
     // The library-internal format predicate, asked of a DECLARED colour
     // model. A descriptor states the model its samples carry, and the
     // packed 4:4:4 layouts make that statement load-bearing: they ride RGBA
@@ -3131,6 +3133,14 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     // a retained copy must not carry a pointer about to dangle.
     m_initConfig.pNext = nullptr;
     m_initialized = true;
+    // The completion timeline is created here, on the session-serial
+    // thread and before any submit, so the submit path reads its handle
+    // without a lock. A session whose device refuses it encodes without
+    // one: GetCompletionTimelineSemaphore answers VK_NULL_HANDLE.
+    if (m_encoder->CreateCompletionTimelineSemaphore() != VK_SUCCESS) {
+        LOG_S_ERROR << "[EncoderExt] the completion timeline semaphore could "
+                       "not be created; this session has none" << std::endl;
+    }
     // Completion deadline: 0 selects the 8 s default; clamp to stay
     // strictly above the library's internal 5 s fence wait so a
     // slow-but-successful frame is not converted into a lost one.
@@ -5680,6 +5690,56 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
 
     outImport->allocationSize = allocInfo.allocationSize;
     outImport->result = VK_ENC_IMPORT_SUCCESS;
+    return VK_VIDEO_ENCODER_STATUS_SUCCESS;
+}
+
+//=============================================================================
+// Completion timeline
+//=============================================================================
+
+// Class (c) against Flush()/teardown, which clear m_encoder under
+// m_pendingMutex and then release it: the encoder is read under that lock,
+// and the export runs through a local reference that keeps the encoder --
+// and the semaphore it owns -- alive across the driver call without holding
+// the lock over it.
+VkSemaphore VulkanVideoEncoderExtImpl::GetCompletionTimelineSemaphore() const
+{
+    std::lock_guard<std::mutex> lock(m_pendingMutex);
+    if (!m_initialized || !m_encoder) {
+        return VK_NULL_HANDLE;
+    }
+    return m_encoder->GetCompletionTimelineSemaphore();
+}
+
+VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ExportCompletionTimelineFd(int* pFd)
+{
+    if (pFd == nullptr) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_STRUCTURE_TYPE_UNKNOWN;
+    }
+    *pFd = -1;
+    VkSharedBaseObj<VkVideoEncoder> encoder;
+    {
+        std::lock_guard<std::mutex> lock(m_pendingMutex);
+        if (!m_initialized || !m_encoder) {
+            return VK_VIDEO_ENCODER_STATUS_ERROR_NOT_INITIALIZED;
+        }
+        encoder = m_encoder;
+    }
+    const VkSemaphore semaphore = encoder->GetCompletionTimelineSemaphore();
+    if (semaphore == VK_NULL_HANDLE) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_NOT_INITIALIZED;
+    }
+    if (!encoder->IsCompletionSemaphoreExportable() || (m_vkDevCtx.GetSemaphoreFdKHR == nullptr)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED;
+    }
+    VkSemaphoreGetFdInfoKHR getInfo{VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR};
+    getInfo.semaphore = semaphore;
+    getInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    int fd = -1;
+    if (m_vkDevCtx.GetSemaphoreFdKHR(m_vkDevCtx.getDevice(), &getInfo, &fd) != VK_SUCCESS) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_IMPORT_FAILED;
+    }
+    *pFd = fd;
     return VK_VIDEO_ENCODER_STATUS_SUCCESS;
 }
 
