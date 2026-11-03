@@ -18,12 +18,10 @@
  * ADOPT-MODE SESSION: the library creates its OWN VkDevice on an instance and
  * a physical device the EMBEDDER already owns.
  *
- * WHY THIS TEST EXISTS. Every external-handle field this API has --
- * externalInstance / externalPhysicalDevice / externalDevice and the two queue
- * family indices -- had ZERO coverage anywhere in the tree. A grep for
- * externalDevice under vk_video_encoder/test returned nothing, so the only
- * thing exercising them was the Chromium embedder, out-of-tree, in the
- * configuration where all three handles are supplied.
+ * WHY THIS TEST EXISTS. It is the in-tree coverage of the external-handle
+ * fields this API has -- externalInstance / externalPhysicalDevice /
+ * externalDevice and the two queue family indices -- and of ADOPT, the
+ * embedding shape an embedder that owns its instance (TVR, for one) uses.
  *
  * WHAT ADOPT IS, and how it differs from the configuration next to it:
  *

@@ -472,8 +472,8 @@ private:
 // How a session reaches the descriptor-API configuration behind an
 // IEncoderConfig.
 //
-// This library and Chromium both build with -fno-rtti, so dynamic_cast is not
-// available to check that a caller handed back a configuration this library
+// The library may be built with -fno-rtti, so dynamic_cast is not available
+// to check that a caller handed back a configuration this library
 // made. QueryInterface already is a typed downcast that needs no RTTI, so it
 // serves here too and there is only one mechanism to understand. The id is not
 // in the public header: it is a private channel between two classes in this

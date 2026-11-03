@@ -396,7 +396,7 @@ constexpr uint32_t kHeight = 480;
 constexpr VkFormat kFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;  // NV12
 
 // Exactly the exporter shape the sibling linux_dmabuf_import test measures
-// green on this host, and the shape a Chromium/GBM producer presents: usage
+// green on this host, and the shape a GBM-exporting producer presents: usage
 // 0x4007, flags 0x100108. The library copies both into its own
 // VkImageCreateInfo verbatim (it never invents a usage), so the importer's
 // create info can only be right if the exporter's was.
@@ -679,8 +679,8 @@ void Harness::BuildDescriptor(
     // Left UNKNOWN on purpose, which is both what the public header
     // prescribes for dma-buf ("Deriving allocationSize from
     // vkGetImageMemoryRequirements is wrong for dma-buf on NVIDIA. 0 means
-    // unknown") and what a GBM/Ozone producer actually has: it holds a
-    // gfx::NativePixmapHandle, which carries no Vulkan memory type at all.
+    // unknown") and what a GBM producer actually has: a native pixmap handle,
+    // which carries no Vulkan memory type at all.
     d.allocationSize  = 0;
     d.memoryTypeBits  = 0;
     d.memoryTypeIndex = UINT32_MAX;

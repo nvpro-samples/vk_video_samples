@@ -678,10 +678,9 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
     // below re-fills both for real capture-mode IDRs.
     encodeFrameInfo->encodeInfo.precedingExternallyEncodedBytes = 0;
 
-    // Local patch; not in upstream vk_video_samples. Stop lying to the
-    // driver's rate controller about the app-prepended per-IDR headers. In
-    // capture mode (disableFileOutput -- the Chromium in-memory bitstream
-    // path) the codec-specific EncodeFrame() above filled
+    // Tell the driver's rate controller about the app-prepended per-IDR
+    // headers. In capture mode (disableFileOutput: the bitstream is delivered
+    // in memory) the codec-specific EncodeFrame() above filled
     // bitstreamHeaderBuffer with SPS/PPS (H.264) / VPS/SPS/PPS (H.265) for
     // EVERY IDR, and WriteBitstreamToFile() prepends those bytes to the
     // emitted chunk CPU-side -- but the RC never saw them, so every IDR
@@ -1511,9 +1510,9 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // and never from srcOldLayout. That separation is the whole safety
     // argument. On every OS-handle import the ext layer DERIVES residency as
     // FOREIGN, so routing falls through to the layout heuristic, and a
-    // PREINITIALIZED declaration is the only thing keeping Chromium's
-    // host-written staging lane out of a queue-family acquire it must not
-    // take (HOST + QFOT is VUID-VkImageMemoryBarrier2-srcStageMask-03854).
+    // PREINITIALIZED declaration is the only thing keeping a host-written
+    // staging image out of a queue-family acquire it must not take (HOST +
+    // QFOT is VUID-VkImageMemoryBarrier2-srcStageMask-03854).
     // Feeding a residual of GENERAL into that predicate would flip it
     // silently. Routing reads the declaration; only the BARRIER reads the
     // record.
@@ -1754,9 +1753,9 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // boundary in the library at which the producer's imported pixels are
         // (a) in a layout a transfer can read and (b) not yet mixed with
         // anything the library did. The difference is what happens to the
-        // result -- MECHANISM-C narrates to stderr, which the shipping
-        // Chromium configuration discards wholesale via silenceStdio, and
-        // this reports through a chained struct that survives it.
+        // result -- MECHANISM-C narrates to stderr, which silenceStdio
+        // discards, and this reports through a chained struct that survives
+        // it.
         //
         // ONCE PER REGISTRATION, not per frame: NeedsCapture() is false from
         // the second frame of a buffer on. On the owner's 5125-frame session
@@ -1873,16 +1872,15 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // TRANSFER_SRC_OPTIMAL) ARMS. The handback hands the image back in
         // TRANSFER_SRC_OPTIMAL, and the NEXT frame's acquire then presents the pair
         // (TRANSFER_SRC_OPTIMAL -> TRANSFER_SRC_OPTIMAL); with no arm for it such a
-        // caller does not round-trip, it aborts (standalone build) or takes a
-        // silently wrong barrier (Chromium). Covered by encoder-ext-input-residency
-        // --local-tso-opaque-fd.
+        // caller does not round-trip: it aborts in a build with exceptions and
+        // takes a silently wrong barrier in a build without them.
         // above) and cannot be PREINITIALIZED (isForeignImport excludes it),
         // so it is always a legal newLayout under VUID-...-newLayout-01198.
         //
-        // For the in-tree Chromium CPU dma-buf lane this evaluates to GENERAL,
-        // which is also the layout that lane needs on other grounds: it
-        // declares RESIDENCY_FOREIGN and then host-writes the buffer through
-        // an mmap between frames, and host access to image memory is
+        // For a FOREIGN host-written input -- one that declares
+        // RESIDENCY_FOREIGN and host-writes the buffer through an mmap between
+        // frames -- this evaluates to GENERAL, which is also the layout such
+        // an input needs on other grounds: host access to image memory is
         // well defined only for a LINEAR image currently in GENERAL or
         // PREINITIALIZED. That second argument is real but narrower than this
         // one -- it does not hold for an OPTIMAL or DRM-modifier import
@@ -2111,10 +2109,9 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // opinion about what its consumer needs. This library does: the
         // consumer is vkCmdEncodeVideoKHR, and GENERAL satisfies
         // VUID-vkCmdEncodeVideoKHR-pEncodeInfo-10811 only when the
-        // unifiedImageLayoutsVideo feature is enabled. It is enabled nowhere
-        // -- zero occurrences across this library, media/gpu/, gpu/vulkan/
-        // and the DEPS-pinned submodule -- so without this barrier the filter arm
-        // encodes out of GENERAL, in violation of the spec.
+        // unifiedImageLayoutsVideo feature is enabled. This library never
+        // enables it, so without this barrier the filter arm would encode out
+        // of GENERAL, in violation of the spec.
         //
         // AFTER THE RECORD, NOT INSIDE THE BLOCK ABOVE: the dispatch is what
         // fills the image, so a transition placed with the acquire would
@@ -3474,7 +3471,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     // is assembled by the file writer rather than by the capture path. A
     // captured reordered stream is therefore missing those headers and its
     // frame identity cannot be reconstructed. File output keeps B-frames;
-    // capture keeps B=0, which is what Chromium uses.
+    // capture refuses them.
     if ((m_encoderConfig->codec == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) &&
         (m_encoderConfig->disableFileOutput != 0) &&
         (m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() > 0)) {
@@ -3905,11 +3902,11 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              sessionCreateInfoChain,
                                              m_videoSession);
 
-        // RELEASE-VISIBLE, and it has to be. Chromium builds this library
-        // with NDEBUG, where the assert below compiles to nothing -- so without
-        // this check a failed vkCreateVideoSessionKHR is not merely
-        // unhandled, it was never examined, and InitEncoder ran on to report
-        // VK_SUCCESS. VulkanVideoSession::Create leaves its out-parameter
+        // RELEASE-VISIBLE, and it has to be. A release build compiles the
+        // assert below to nothing, so without this check a failed
+        // vkCreateVideoSessionKHR is not merely unhandled, it is never
+        // examined, and InitEncoder runs on to report VK_SUCCESS.
+        // VulkanVideoSession::Create leaves its out-parameter
         // untouched on every one of its early error returns, so m_videoSession
         // keeps its PREVIOUS value: null on a first init, which
         // InitEncoderCodec then dereferences as *m_videoSession while building
@@ -4458,16 +4455,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // Colour conversion parameters for the RGBA->YCbCr preprocess filter,
         // derived from the VUI the caller asked for.
         //
-        // These were hardcoded to BT.2020 / full range behind three FIXMEs, and
-        // they are not cosmetic. VulkanFilterYuvCompute::InitRGBA2YCBCR reads
+        // They are not cosmetic. VulkanFilterYuvCompute::InitRGBA2YCBCR reads
         // exactly these two fields back out of the sampler-conversion info to
         // choose the shader's matrix (from ycbcrModel) and its range mapping
-        // (from ycbcrRange). Hardcoding them converted every RGBA frame at
-        // BT.2020 full range while the bitstream's VUI advertised whatever the
-        // caller set -- so a conforming decoder was required to mis-colour the
-        // result. A Chromium session is the concrete case: its config builder
-        // defaults matrixCoefficients to 1 (BT.709) and videoFullRange to
-        // VK_FALSE, i.e. the two values furthest from what was being applied.
+        // (from ycbcrRange). Any value other than the one the bitstream's VUI
+        // advertises makes a conforming decoder mis-colour the result -- a
+        // caller that leaves the defaults (matrix 1, BT.709; limited range)
+        // must get exactly those applied.
         //
         // The VUI fields are the right source precisely because they are what
         // the bitstream will advertise: deriving from them makes the conversion
@@ -5089,23 +5083,19 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_GENERAL) && (newLayout == VK_IMAGE_LAYOUT_GENERAL)) {
-        // Local patch; not in upstream vk_video_samples.
-        //
         // THE SAME PAIR, NOT AN ACQUIRE: the filter's input transition for an
-        // image this device already owns. This is the arm the shipping
-        // Chromium filter lane actually takes, and the scopes it used to
-        // carry were wrong for every producer that can reach it.
+        // image this device already owns, with the first scope every producer
+        // that can reach it needs.
         //
         // WHO REACHES IT. The gate at the filter call site is
         // isExternalInput, NOT isForeignImport, so a LOCAL registration lands
         // here with both families IGNORED. Two producers reach it and
         // NEITHER is a compute dispatch:
         //
-        //   * the HOST, through a persistent mapping. This is Chromium's
-        //     shipping CPU/shmem staging tier on an I420 or RGBA session: it
+        //   * the HOST, through a persistent mapping: a producer that
         //     host-writes the image every frame through a coherent mmap,
         //     declares RESIDENCY_LOCAL, and leaves currentLayout UNDEFINED so
-        //     srcOldLayout is remapped to GENERAL. Its stores got NO
+        //     srcOldLayout is remapped to GENERAL. Its stores need an
         //     availability operation before the filter's SHADER_READ.
         //   * a TRANSFER, which is what the in-tree suite above does with
         //     vkCmdCopyBufferToImage.
@@ -5213,8 +5203,8 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         // output over (below), NOTHING in the tree produced this pair with
         // IGNORED families, and the encode read the filter's output in
         // GENERAL. That is legal only with the unifiedImageLayoutsVideo
-        // feature, which has zero occurrences anywhere in this library, in
-        // media/gpu/ or in gpu/vulkan/ -- so it was a real violation of
+        // feature, which this library never enables -- so it was a real
+        // violation of
         // VUID-vkCmdEncodeVideoKHR-pEncodeInfo-10811, invisible for the
         // reason VkVideoEncodeFrameInfo::srcEncodeImageStagedLayout
         // documents.
@@ -5346,19 +5336,10 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) &&
                (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
-        // Local patch; not in upstream vk_video_samples.
-        //
-        // THE SAME PAIR, NOT AN ACQUIRE. This is the arm the library had been
-        // documenting for two releases without having: VkVideoEncoder.cpp's
-        // staging release (:1290-1294) and its filter release (:1513-1517)
-        // both promise, in as many words, that "a caller that declares
-        // TRANSFER_SRC_OPTIMAL round-trips today". It did not round-trip. It
-        // reached the terminal else, which under __cpp_exceptions -- the
-        // standalone CMake build -- is an uncaught throw from a function with
-        // no handler anywhere on its call stack, i.e. std::terminate, and
-        // under Chromium's -fno-exceptions build is a SILENT fall-through
-        // that leaves the struct defaults: a VIDEO_ENCODE second scope in
-        // front of a vkCmdCopyImage TRANSFER read, with no diagnostic.
+        // THE SAME PAIR, NOT AN ACQUIRE: a caller that declares
+        // TRANSFER_SRC_OPTIMAL round-trips through this arm. Without it the
+        // pair reaches the total fallback below, which in front of a
+        // vkCmdCopyImage TRANSFER read is correct but conservative.
         //
         // The declaration is not exotic. It is what a caller that pools a
         // staging image and last used it as a copy source must state to be
@@ -5392,24 +5373,15 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
-        // Local patch; not in upstream vk_video_samples.
-        // A host-written LINEAR external input. Chromium's VulkanVideoEncode-
-        // Accelerator shmem-staging path host-fills the NV12 planes through a
-        // persistent mapping and then SUBMITS the frame with
-        // currentLayout=PREINITIALIZED -- forwarded as desc.defaultLayout, and
-        // reaching this table as srcExternalImageLayout. That SUBMIT-time
-        // layout is what this arm keys on. It is NOT the staging image's
-        // create-time layout: that is initialLayout=UNDEFINED, as
-        // VUID-VkImageCreateInfo-pNext-01443 requires of an external-memory
-        // image (vulkan_video_encode_accelerator.cc:1604). This comment used to
-        // say Chromium created the image PREINITIALIZED; that stopped being
-        // true when Chromium moved to UNDEFINED, and behaviour never depended
-        // on it. Chromium hands the frame to SetExternalInputFrame; the library
-        // stages it to an OPTIMAL encode image via CopyLinearToOptimalImage. The
-        // upstream transition table only covers producer-left GENERAL images, so
-        // PREINITIALIZED fell through to the (exceptions-off) empty else and kept
-        // the default VIDEO_ENCODE-stage barrier -> wrong sync for the following
-        // transfer read. Make the host writes available to the copy.
+        // A host-written LINEAR external input: the producer host-fills the
+        // planes through a persistent mapping and then submits the frame with
+        // currentLayout=PREINITIALIZED, which reaches this table as
+        // srcExternalImageLayout. That SUBMIT-time layout is what this arm
+        // keys on, not the image's create-time layout (an external-memory
+        // image is created UNDEFINED, VUID-VkImageCreateInfo-pNext-01443).
+        // The library stages it to an OPTIMAL encode image via
+        // CopyLinearToOptimalImage, so the host writes are made available to
+        // the copy's transfer read.
         imageBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
         imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_HOST_BIT;
@@ -5417,17 +5389,11 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
     } else if ((oldLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR) &&
                (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR) &&
                (srcQueueFamilyIndex == VK_QUEUE_FAMILY_FOREIGN_EXT)) {
-        // Local patch; not in upstream vk_video_samples.
-        //
-        // THE PATH-A ACQUIRE ALREADY TAKES THIS PAIR AND HAD NO ARM. A
-        // producer that hands over an encode-source image declares
-        // VIDEO_ENCODE_SRC_KHR, and the acquire transitions it to
-        // VIDEO_ENCODE_SRC_KHR -- an ownership transfer with no layout
-        // change. With no arm it fell to the else below, which in Chromium's
-        // -fno-exceptions build silently kept the struct defaults and in the
-        // standalone CMake build THROWS. It has been surviving in Chromium
-        // only because those defaults happen to suit an acquire feeding a
-        // video-encode read; stating it makes that luck a contract.
+        // THE PATH-A ACQUIRE TAKES THIS PAIR. A producer that hands over an
+        // encode-source image declares VIDEO_ENCODE_SRC_KHR, and the acquire
+        // transitions it to VIDEO_ENCODE_SRC_KHR -- an ownership transfer with
+        // no layout change, whose scopes are stated here rather than left to
+        // the fallback below: an acquire feeding a video-encode read.
         imageBarrier.srcAccessMask = 0;
         imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE_KHR;
@@ -5447,30 +5413,17 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else {
-        // Local patch; not in upstream vk_video_samples.
+        // THE TOTAL FALLBACK, and the same in every build: ALL_COMMANDS and
+        // MEMORY_READ|WRITE on both sides, with a diagnostic. An unhandled
+        // pair must not terminate the process (a build with exceptions) or
+        // fall through to the struct defaults set at the top of this function
+        // (a build without them): those defaults are the wrong second scope
+        // in front of a vkCmdCopyImage, and silently so -- the layers cannot
+        // object, because oldLayout/newLayout are passed through verbatim.
         //
-        // THE TOTAL FALLBACK, replacing a construct that was the worst of
-        // both worlds: `throw std::invalid_argument` under __cpp_exceptions
-        // and an EMPTY BODY without it. That is precisely inverted with
-        // respect to which build ships. The standalone CMake build -- which
-        // defines __cpp_exceptions, has no handler anywhere on
-        // StageInputFrame's call stack, and is a test harness -- got
-        // std::terminate. Chromium, which compiles this file -fno-exceptions
-        // and is the build that actually ships, fell THROUGH the empty else
-        // and recorded the barrier with the struct defaults set at the top of
-        // this function: srcStageMask NONE, srcAccessMask 0, dstStageMask
-        // VIDEO_ENCODE, dstAccessMask VIDEO_ENCODE_READ. In front of a
-        // vkCmdCopyImage that is the wrong second scope, and it is silent --
-        // the layers cannot object, because oldLayout/newLayout are passed
-        // through verbatim so the layout tracker stays consistent and no VUID
-        // is violated. A wrong barrier with no diagnostic is the single
-        // hardest defect class in this file to find; two of the arms above
-        // exist because it was found the hard way.
-        //
-        // WHY NOT KEEP THE THROW: a library that terminates the embedder's
-        // process because a caller named a legal VkImageLayout this table has
-        // not been taught yet is not a library. And it terminated only in the
-        // build that cannot ship, so it bought no shipping safety at all.
+        // NOT A THROW: a library that terminates the embedder's process
+        // because a caller named a legal VkImageLayout this table has not been
+        // taught yet is not a library.
         //
         // WHY NOT RETURN AN ERROR: three of this function's ten call sites
         // discard the return value entirely and two more cast it to (void).
@@ -6271,8 +6224,8 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     // function and a different command buffer -- is the only thing that can.
     //
     // MAX_ENUM means the frame was never staged: Path A / RESIDENCY_LOCAL,
-    // where Chromium declares defaultLayout = VK_IMAGE_LAYOUT_VIDEO_ENCODE_
-    // SRC_KHR and the frame is conformant by declaration, and the AV1
+    // where the producer declares VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR and
+    // the frame is conformant by declaration, and the AV1
     // show-existing pseudo-frames, which have no source picture at all.
     // Judging those would be judging a fact this library did not record.
     //

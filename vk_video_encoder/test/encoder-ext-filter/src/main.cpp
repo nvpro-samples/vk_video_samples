@@ -48,14 +48,11 @@
  * is accepted by a real driver -- both need the GPU and are deferred to
  * vk_filter_test and vk-video-enc-test.
  *
- * WHY THIS FILE EXISTS AT ALL. The binder conformance suite that would
- * normally carry these assertions (VulkanVideoEncoderConfigBinderTest) lives
- * in Chromium, not in this tree, so a change to the field table's
- * dispositions had no in-tree test that could fail. It does now.
+ * WHY THIS FILE EXISTS AT ALL. It is the in-tree test that fails when a
+ * disposition in the field table changes.
  *
  * CTest semantics, matching the sibling library tests: 0 means every
- * assertion held, 1 means an assertion failed, 2 means the harness could not
- * run at all -- deliberately a FAILURE and not a skip. There is no GPU,
+ * assertion held, 1 means an assertion failed. There is no GPU,
  * driver or display dependence here.
  */
 
@@ -4579,13 +4576,9 @@ void CaseUnspecifiedMatrixIsDerivedFromPrimaries()
 //-----------------------------------------------------------------------------
 // CC-1's table, walked. THE POINT IS NOT COVERAGE, IT IS DRIFT DETECTION.
 //
-// The same table is implemented on the Chromium side
-// (media/gpu/vulkan/vulkan_video_encode_accelerator.cc, and walked by
-// VulkanVeaMatrixTableTest). Code cannot be shared across the two
-// repositories, so a divergence can only be caught by both sides asserting
-// the same rows. If you change a disposition here and the review does not
-// also carry a matching change to VulkanVeaMatrixTableTest, one of the two
-// is wrong.
+// Every row of the table is asserted here, so a change to a disposition is a
+// change to this test, visible in review. A producer that mirrors the table
+// in its own code walks the same rows.
 //
 // READ THIS BEFORE ADDING A ROW: the input here is the PUBLIC ext field, on
 // which 0 means "not supplied". A 0 written below is rewritten to 2 by the

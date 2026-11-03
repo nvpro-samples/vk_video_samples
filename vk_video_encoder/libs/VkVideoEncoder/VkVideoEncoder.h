@@ -1423,30 +1423,15 @@ protected:
                                         uint32_t dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                         uint32_t baseArrayLayer = 0);
 
-    // Local patch; not in upstream vk_video_samples.
-    //
     // The RELEASE half of the FOREIGN_EXT ownership transfers the acquire
     // sites perform. Deliberately NOT TransitionImageLayout:
     //
     //  (a) That function picks its four barrier masks from an
-    //      (oldLayout,newLayout) if/else chain, and an unhandled pair still
-    //      gets a barrier -- now a deliberate ALL_COMMANDS/MEMORY_* fallback
-    //      with a loud diagnostic, rather than the struct defaults.
-    //
-    //      THIS SUB-ARGUMENT USED TO REST ON A BUILD DIVERGENCE THAT NO
-    //      LONGER EXISTS, and is corrected here rather than quietly left to
-    //      rot. The chain's final else was
-    //      `#ifdef __cpp_exceptions throw ... #endif`, which meant the
-    //      standalone CMake build (exceptions ON) terminated on an unhandled
-    //      pair while Chromium's -fno-exceptions build silently kept the
-    //      defaults -- so a ctest could not reproduce the shipping failure
-    //      mode. Both halves were replaced by one total fallback that behaves
-    //      identically in both builds, so that particular reason to avoid
-    //      this table is gone.
-    //
-    //      What survives, and is why this helper still exists: the fallback
-    //      is correct-but-conservative for an ACQUIRE and still not right for
-    //      a RELEASE, for reason (b) below.
+    //      (oldLayout,newLayout) if/else chain, and an unhandled pair gets a
+    //      deliberate ALL_COMMANDS/MEMORY_* fallback with a loud diagnostic,
+    //      the same with or without exceptions. That fallback is
+    //      correct-but-conservative for an ACQUIRE and still not right for a
+    //      RELEASE, for reason (b) below.
     //  (b) For a RELEASE the spec USES srcStageMask/srcAccessMask and
     //      IGNORES the dst pair -- the exact inverse of an acquire. So the
     //      defaults that let an unhandled ACQUIRE survive by luck turn an
@@ -1641,10 +1626,9 @@ public:
 
         InsertOrdered(encodeFrameInfo, isReferenceFrame);
 
-        // Local patch; not in upstream vk_video_samples.
         // Flush per-frame when there is no B-frame reordering. The deferred-GOP
         // queue is otherwise drained only on lastFrame / IDR-preflush / a full
-        // reference window. A Chromium stream never signals lastFrame, and with
+        // reference window. A live stream may never signal lastFrame, and with
         // consecutiveBFrames=0 no reordering is needed, so without this trigger
         // every frame piles into m_lastDeferredFrame, the encode-image pool
         // exhausts (~m_holdRefFramesInQueue), RecordVideoCodingCmd never runs, and
@@ -2021,8 +2005,7 @@ public:
     // (m_assemblyFileMutex) STILL HELD, because both capture paths publish
     // from inside their ordering turn. The callback therefore MUST NOT BLOCK
     // and MUST NOT wait on anything an assembly worker could produce -- doing
-    // so stalls every worker and wedges the pipeline. Chromium's callback is a
-    // post-to-sequence trampoline, which satisfies this by construction.
+    // so stalls every worker and wedges the pipeline.
     void SetOnBitstreamCaptured(std::function<void(uint64_t)> callback) {
         std::lock_guard<std::mutex> lock(m_capturedBitstreamsMutex);
         m_onBitstreamCaptured = std::move(callback);

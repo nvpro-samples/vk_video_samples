@@ -32,8 +32,8 @@
 // header the driver produced.
 //
 // UNITS. The struct below carries SMPTE ST 2086 units, which is what the
-// H.265 SEI codes directly and what a producer already has (Chromium's
-// gfx::HdrMetadataSmpteSt2086, ffmpeg's AVMasteringDisplayMetadata):
+// H.265 SEI codes directly and what a producer already has (ffmpeg's
+// AVMasteringDisplayMetadata, for example):
 //
 //   chromaticity  increments of 0.00002   (value = coordinate * 50000)
 //   luminance     increments of 0.0001 cd/m^2 (value = nits * 10000)

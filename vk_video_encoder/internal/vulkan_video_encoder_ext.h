@@ -130,10 +130,9 @@ typedef enum VkVideoEncoderStructureType {
 //          session that chains this struct is REJECTED at InitializeExt.
 //
 // UNITS ARE SMPTE ST 2086's, i.e. exactly what the H.265 SEI codes and what a
-// producer already holds (Chromium's gfx::HdrMetadataSmpteSt2086, ffmpeg's
-// AVMasteringDisplayMetadata): chromaticity in increments of 0.00002
-// (coordinate x 50000), luminance in increments of 0.0001 cd/m^2 (nits x
-// 10000). AV1 codes the same quantities in DIFFERENT fixed-point formats and
+// producer already holds (ffmpeg's AVMasteringDisplayMetadata, for example):
+// chromaticity in increments of 0.00002 (coordinate x 50000), luminance in
+// increments of 0.0001 cd/m^2 (nits x 10000). AV1 codes the same quantities in DIFFERENT fixed-point formats and
 // in a DIFFERENT primary order; the library converts. The caller supplies one
 // spelling and never sees the other.
 //

@@ -57,8 +57,8 @@ public:
                                   << std::endl;
                     }
 #else
-                    // Chromium builds with -fno-exceptions: nothing can be
-                    // caught here; an escaping exception is process-fatal.
+                    // Without exceptions nothing can be caught here; an
+                    // escaping exception is process-fatal.
                     task();
 #endif
                 }

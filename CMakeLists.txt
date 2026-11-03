@@ -215,9 +215,8 @@ add_definitions(
 # filter needs to compile its generated GLSL at runtime
 # (VulkanShaderCompiler.cpp). No such embedder remains: standalone builds get a
 # backend from cmake/VulkanShaderCompilerBackend.cmake (glslang by default,
-# shaderc via -DVK_VIDEO_SAMPLES_SHADER_BACKEND=shaderc), and Chromium defines
-# the macro too, in third_party/vulkan_video_samples/BUILD.gn
-# config("private_includes").
+# shaderc via -DVK_VIDEO_SAMPLES_SHADER_BACKEND=shaderc), and an embedder that
+# builds these sources with its own build system defines the macro itself.
 #
 # A COMPILE-TIME switch, and a real one. VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 # is consulted by guards in VkEncoderConfig.h, VkVideoEncoder.{h,cpp},
@@ -664,7 +663,7 @@ if(BUILD_ENCODER)
         # externalDevice left NULL -- is the supported embedding shape,
         # and this suite is the only thing in the tree that exercises
         # externalInstance, externalPhysicalDevice or externalDevice at
-        # all: the only caller was the out-of-tree Chromium embedder.
+        # all.
         # Four entries: the ADOPT subject, an OWN control that makes a
         # red subject attributable to the adopted handles rather than to
         # the host, the physical-device pin, and config.validate over a
