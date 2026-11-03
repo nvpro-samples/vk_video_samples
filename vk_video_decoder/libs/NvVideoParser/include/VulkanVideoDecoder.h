@@ -72,7 +72,6 @@ public:
 protected:
     std::atomic<int32_t>             m_refCount;
     VkVideoCodecOperationFlagBitsKHR m_standard;        // Encoding standard
-    uint32_t                         m_264SvcEnabled:1;    // enabled NVCS_H264_SVC
     uint32_t                         m_outOfBandPictureParameters:1; // Enable out of band parameters cb
     uint32_t                         m_initSequenceIsCalled:1;
     VkParserVideoDecodeClient *m_pClient;  // Interface to decoder client
@@ -109,7 +108,6 @@ protected:
     } m_PTSQueue[MAX_QUEUED_PTS];
     int32_t m_bDiscontinuityReported;           // Dicontinuity reported
     VkParserPictureData *m_pVkPictureData;
-    int32_t m_iTargetLayer;                     // Specific to SVC only
     int32_t m_bDecoderInitFailed;               // Set when m_pClient->BeginSequence fails to create the decoder
     int32_t m_lCheckPTS;                        // Run the m_bFilterTimestamps for the first few framew to look for out of order PTS
     NVCodecErrors m_eError;

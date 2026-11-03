@@ -35,7 +35,6 @@ set(LIBNVPARSER
   src/VulkanVP9Decoder.cpp
   src/VulkanAV1GlobalMotionDec.cpp
   src/VulkanVideoDecoder.cpp
-  src/nvVulkanh264ScalingList.cpp
   src/cpudetect.cpp
 )
 

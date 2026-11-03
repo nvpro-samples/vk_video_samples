@@ -24,7 +24,6 @@
 VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
     : m_refCount(0)
     , m_standard(std)
-    , m_264SvcEnabled(false)
     , m_outOfBandPictureParameters(false)
     , m_initSequenceIsCalled(false)
     , m_pClient()
@@ -56,7 +55,6 @@ VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
     , m_PTSQueue{}
     , m_bDiscontinuityReported()
     , m_pVkPictureData()
-    , m_iTargetLayer(0)
     , m_bDecoderInitFailed()
     , m_lCheckPTS()
     , m_eError(NV_NO_ERROR)
@@ -64,11 +62,7 @@ VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
     , m_refusedUnits(0)
     , m_unsupportedPictures(0)
 {
-    if (m_264SvcEnabled) {
-        m_pVkPictureData = new VkParserPictureData[128];
-    } else {
-        m_pVkPictureData = new VkParserPictureData;
-    }
+    m_pVkPictureData = new VkParserPictureData;
 }
 
 
@@ -79,16 +73,8 @@ VulkanVideoDecoder::~VulkanVideoDecoder()
     // vtable has been unwound. Derived destructors must call Deinitialize()
     // themselves (while their vtable is still intact).
 
-    if (m_264SvcEnabled)
-    {
-        delete [] m_pVkPictureData;
-        m_pVkPictureData = NULL;
-    }
-    else
-    {
-        delete m_pVkPictureData;
-        m_pVkPictureData = NULL;
-    }
+    delete m_pVkPictureData;
+    m_pVkPictureData = NULL;
 }
 
 
@@ -680,8 +666,6 @@ void VulkanVideoDecoder::end_of_picture()
 {
     if ((m_nalu.end_offset > 3) && (m_bitstreamData.GetStreamMarkersCount() > 0))
     {
-        assert(!m_264SvcEnabled);
-        // memset(m_pVkPictureData, 0, (m_264SvcEnabled ? 128 : 1) * sizeof(VkParserPictureData));
         m_pVkPictureData[0] = VkParserPictureData();
         m_pVkPictureData->bitstreamDataOffset = 0;
         m_pVkPictureData->firstSliceIndex = 0;
@@ -691,14 +675,14 @@ void VulkanVideoDecoder::end_of_picture()
         m_pVkPictureData->numSlices = m_bitstreamData.GetStreamMarkersCount();
         if(BeginPicture(m_pVkPictureData))
         {
-            if ((m_pVkPictureData + m_iTargetLayer)->pCurrPic)
+            if (m_pVkPictureData->pCurrPic)
             {
                 int32_t lDisp = 0;
 
                 // Find an entry in m_DispInfo
                 for (int32_t i = 0; i < MAX_DELAY; i++)
                 {
-                    if (m_DispInfo[i].pPicBuf == (m_pVkPictureData + m_iTargetLayer)->pCurrPic)
+                    if (m_DispInfo[i].pPicBuf == m_pVkPictureData->pCurrPic)
                     {
                         lDisp = i;
                         break;
@@ -707,15 +691,15 @@ void VulkanVideoDecoder::end_of_picture()
                      || ((m_DispInfo[lDisp].pPicBuf != NULL) && (m_DispInfo[i].llPTS - m_DispInfo[lDisp].llPTS < 0)))
                         lDisp = i;
                 }
-                m_DispInfo[lDisp].pPicBuf = (m_pVkPictureData + m_iTargetLayer)->pCurrPic;
+                m_DispInfo[lDisp].pPicBuf = m_pVkPictureData->pCurrPic;
                 m_DispInfo[lDisp].bSkipped = false;
                 m_DispInfo[lDisp].bDiscontinuity = false;
-                m_DispInfo[lDisp].lPOC = (m_pVkPictureData + m_iTargetLayer)->picture_order_count;
-                if (((m_pVkPictureData + m_iTargetLayer)->field_pic_flag) && (!(m_pVkPictureData + m_iTargetLayer)->second_field))
+                m_DispInfo[lDisp].lPOC = m_pVkPictureData->picture_order_count;
+                if ((m_pVkPictureData->field_pic_flag) && (!m_pVkPictureData->second_field))
                     m_DispInfo[lDisp].lNumFields = 1;
                 else
-                    m_DispInfo[lDisp].lNumFields = 2 + (m_pVkPictureData + m_iTargetLayer)->repeat_first_field;
-                if ((!(m_pVkPictureData + m_iTargetLayer)->second_field) // Ignore PTS of second field if we already got a PTS for the 1st field
+                    m_DispInfo[lDisp].lNumFields = 2 + m_pVkPictureData->repeat_first_field;
+                if ((!m_pVkPictureData->second_field) // Ignore PTS of second field if we already got a PTS for the 1st field
                  || (!m_DispInfo[lDisp].bPTSValid))
                 {
                     // Find a PTS in the list
