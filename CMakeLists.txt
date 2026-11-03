@@ -688,58 +688,14 @@ if(BUILD_ENCODER)
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_subdirectory(vk_video_encoder/test/encoder-sync-fd)
         endif()
+        # fd-backed images submitted through the interface: OPAQUE_FD and
+        # DMA_BUF imports, fd ownership under Transfer and Borrow, and the
+        # refusal of descriptions the device cannot import.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-import-fd)
+        endif()
         # The device probe's skip-or-fail verdict, without a device.
         add_subdirectory(vk_video_encoder/test/encode-device-probe)
-
-        # Real-device coverage of the NVIDIA 615.06 dma-buf IMPORT-ORDINAL
-        # GUARD, which shipped with a coverage floor of exactly zero: no
-        # test, CMake entry or CI file referenced it, and
-        # VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF reached
-        # VkEncImportExternalImage from NO encoder-ext test at all -- every
-        # registration in the tree was VK_IMAGE or OPAQUE_FD, on both of
-        # which the guard returns at its second line. The suite was green
-        # with the workaround deleted.
-        #
-        # THE GUARD IS RETIRED. kVkEncImportOrdinalGuardCount is 0 at the
-        # shipped default, so it takes no sacrificial imports and retains
-        # nothing. Do not read the paragraph below as a description of a
-        # working mitigation; it never was one.
-        #
-        # WHAT WAS MEASURED, on an A4000 against NVIDIA 615.06. An import is
-        # damaged iff its process-global dma-buf import ordinal falls on one
-        # of two residues mod 32. The guard consumes ordinals ahead of the
-        # caller, so it moves WHICH imports are damaged and never HOW MANY:
-        # the damage rate is 12.5% at K = 0, 1, 2, 3 and 4 alike. It is a
-        # phase shift wearing the costume of a fix.
-        #
-        # It is also not recoverable downstream. Writing through a damaged
-        # import is swallowed, and an immediate re-import at ordinal+1
-        # rescued 0 of 8 -- once a buffer is damaged it stays damaged. The
-        # damage splits in two: on one population the bytes ARE in the
-        # buffer and only our Vulkan mapping is dead (an EGL import and a
-        # plain CPU mmap of the same fd both read the frame perfectly); on
-        # the other the producer's write never landed and the pixels are
-        # gone for every reader. A phase-shifted control moved both
-        # populations exactly as predicted, 13/13.
-        #
-        # WHAT THIS SUITE IS FOR NOW. It exports a REAL dma-buf from a real
-        # NVIDIA VkDevice and imports it, with counting thunks in the device
-        # dispatch table, and asserts the retirement is REAL: at K = 0 the
-        # guard must take zero imports, retain nothing, and report DISABLED
-        # -- while the same harness, given an explicit non-zero count, still
-        # holds the armed build to its original claim. That second arm is
-        # what keeps the retirement honest instead of merely quiet, and it
-        # is why the mechanism was left in place rather than deleted.
-        #
-        # THE KILL SWITCH NO LONGER DISCRIMINATES, and must not be sold as
-        # a mutation proof: at K = 0 the subject is already inert, so
-        # VK_VIDEO_ENCODER_NO_IMPORT_ORDINAL_GUARD=1 leaves it green (0/21).
-        # The live mutation proof is the explicit --guard-count=2 arm, which
-        # goes red 11/21 against the retired library.
-        #
-        # Skips (exit 77) with no GPU, no dma-buf export, or a non-NVIDIA
-        # GPU, where the guard refuses to run by design.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-import-ordinal-guard)
 
         # H.264 Baseline must not emit CABAC. profile_idc 66 covers Baseline
         # and Constrained Baseline alike and neither admits CABAC:

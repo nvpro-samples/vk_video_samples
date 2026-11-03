@@ -94,7 +94,7 @@ enum VkVideoEncoderShutdownDisposition {
     VK_VIDEO_ENCODER_SHUTDOWN_LOST_DEVICE_RETIRED = 1,
 
     // Any other terminal wait error, or a shutdown still underway. Every GPU
-    // object, imported sync object, registration and producer dependency must
+    // object, imported sync object, imported image and producer dependency must
     // be preserved: nothing has established that the device stopped using
     // them.
     VK_VIDEO_ENCODER_SHUTDOWN_UNPROVEN = 2,
@@ -168,6 +168,11 @@ public:
     VkResult SubmitExternalFrame(
         const VkVideoEncodeInputFrame& frame,
         VkSemaphore* pStagingCompleteSemaphore = nullptr) override;
+    VkResult SubmitImportedFrame(
+        const VkVideoEncoderExternalImageDescriptor& desc,
+        uint64_t osHandle,
+        const VkVideoEncodeInputFrame& frame,
+        VkVideoEncoderStatusCode* pImportStatus) override;
     VkResult CancelFrame(uint64_t frameId) override;
     VkResult AbandonAllFrames(uint32_t* pAbandonedCount) override;
     VkResult AcquireNextEncodedFrame(VkVideoEncodeResult& result) override;
@@ -259,6 +264,22 @@ public:
 
 private:
     void Deinitialize();
+
+    // SubmitExternalFrame, with |inputOwner| -- when set -- attached to the
+    // frame's VkVideoEncodeFrameInfo, which drops it once the frame's
+    // command buffers have completed. That is how an imported image lives
+    // exactly as long as the work that reads it.
+    VkResult SubmitExternalFrameCommon(
+        const VkVideoEncodeInputFrame& frame,
+        VkSemaphore* pStagingCompleteSemaphore,
+        const VkSharedBaseObj<VkVideoRefCountBase>& inputOwner);
+
+    // Everything about an import description that can be refused before
+    // anything is created: the handle type, the extent, the usage, the
+    // tiling and plane layout, the extensions the import needs, the
+    // device it names, and whether this device imports that image at all.
+    VkVideoEncoderStatusCode ValidateImportDescriptor(
+        const VkVideoEncoderExternalImageDescriptor& desc) const;
 
     // Build EncoderConfig from the structured VkVideoEncoderConfig
     VkResult BuildEncoderConfig(const VkVideoEncoderConfig& extConfig,
@@ -1030,9 +1051,7 @@ VkResult VkEncBuildEncoderConfig(
     // over a Y'CbCr format, Y'CbCr declared over an RGBA layout that carries
     // no packed 4:4:4 reading, or a value the enumeration does not define --
     // and there is no route to choose from an answer that means "the caller
-    // stated two things that cannot both be true". This is the same
-    // predicate, and the same refusal, the registration gate applies to a
-    // descriptor, so one contradiction is answered once.
+    // stated two things that cannot both be true".
     //
     // Separated from the format refusal below because the FORMAT in such a
     // pair is usually the half that is not wrong: NV12 declared RGB reaches
@@ -2718,8 +2737,8 @@ VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderDeviceIdentity);
 // is the one structure in this API that IS the IPC payload: a producer in
 // another process fills it by field copy, so its member offsets are the wire
 // format rather than a property of this build. Its two non-data members --
-// pNext, refused non-NULL, and existingImage, read only on the same-process
-// VK_IMAGE arm -- cross no such boundary. It is also long
+// pNext, refused non-NULL, and existingImage, which nothing reads -- cross no
+// such boundary. It is also long
 // enough that a change to one end of it is read nowhere near the other.
 #if defined(__LP64__) || defined(_LP64) || defined(_WIN64)
 #define VK_ENC_PIN_MEMBER(T, m, N)                                          \
@@ -3224,6 +3243,14 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
     const VkVideoEncodeInputFrame& frame,
     VkSemaphore* pStagingCompleteSemaphore)
 {
+    return SubmitExternalFrameCommon(frame, pStagingCompleteSemaphore, nullptr);
+}
+
+VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrameCommon(
+    const VkVideoEncodeInputFrame& frame,
+    VkSemaphore* pStagingCompleteSemaphore,
+    const VkSharedBaseObj<VkVideoRefCountBase>& inputOwner)
+{
     // Class (b) versus Flush()/teardown, which null m_encoder under
     // m_pendingMutex and then release it. Take a reference under the same
     // lock they clear it under and submit through the local reference --
@@ -3349,6 +3376,16 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
         case VK_VIDEO_ENCODER_INPUT_RESIDENCY_AUTO:
         default:
             break;
+    }
+
+    // An imported image rides on the frame node. A node a refused submit
+    // returned to the pool may still hold a previous owner, whose command
+    // buffers are waited before that owner is dropped.
+    if (inputOwner) {
+        if (encodeFrameInfo->externalInputOwner) {
+            encodeFrameInfo->SyncHostOnCmdBuffComplete();
+        }
+        encodeFrameInfo->externalInputOwner = inputOwner;
     }
 
     // ADMIT BEFORE THE ENCODER CAN PUBLISH. The assembly worker can capture
@@ -3950,8 +3987,8 @@ VkResult VulkanVideoEncoderExtImpl::Flush()
 
     if (m_shutdown.disposition == VK_VIDEO_ENCODER_SHUTDOWN_UNPROVEN) {
         // Do NOT release the core here. Nothing has established that the
-        // device stopped reading the images, imported semaphores and
-        // registrations it owns, and destroying them on an unproven wait is
+        // device stopped reading the images and imported semaphores it
+        // owns, and destroying them on an unproven wait is
         // precisely the use-after-free the wait exists to rule out. The
         // encoder, its resources and every producer dependency stay alive; a
         // later Flush retries the wait.
@@ -4002,8 +4039,8 @@ VkResult VulkanVideoEncoderExtImpl::DrainPendingFrames()
     // which publishes no CapturedBitstream. Every frame submitted after the
     // first drain was still encoded correctly -- the bytes reached the file
     // under file output -- and NONE of them ever raised a completion edge or
-    // became acquirable, so each held its PendingFrame and its resource
-    // registration for the rest of the session. DrainAndRestartThreads()
+    // became acquirable, so each held its PendingFrame and its resources
+    // for the rest of the session. DrainAndRestartThreads()
     // brings the assembly workers back up, which is what makes the word
     // "non-terminal" true of the completion surface and not just of the
     // encoder object.
@@ -5129,7 +5166,7 @@ void VkEncSelectImportMemoryType(const VkEncImportMemoryTypeRequest& request,
     }
     // A type the driver declares importable for this handle is spec-valid
     // and functional; refusing it over a DEVICE_LOCAL preference would turn
-    // a workable registration into a failure.
+    // a workable import into a failure.
     for (uint32_t i = 0; i < typeCount; i++) {
         if ((mask & (1u << i)) != 0) {
             outChoice->index = i;
@@ -5203,32 +5240,6 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
     doomedEncoder = nullptr;
     doomedConfig  = nullptr;
 
-    // The dma-buf import-ordinal guard, and the last Vulkan object this
-    // session destroys. At the disabled default (count 0) the guard holds
-    // nothing, this finds nothing and returns 0 -- but the ORDER stays
-    // load-bearing for any build that re-arms it, so the call stays where the
-    // armed guard needs it. LAST is then the requirement and not a
-    // preference: the guard's whole function is to hold the leading dma-buf
-    // import live-positions, so it has to outlive every import this device
-    // will ever make. Everything above -- the encoder release that joins the
-    // library threads -- is above a line past which VkEncImportExternalImage
-    // is no longer reachable on m_vkDevCtx; below it, ~VulkanDeviceContext destroys the device itself as
-    // soon as this object's destructor body returns.
-    //
-    // Deinitialize() is private and the destructor is its only caller, so this
-    // runs exactly once per session, on every exit path including a failed
-    // init. If Deinitialize ever becomes re-enterable, this call has to move
-    // with the device's lifetime and not with the session's -- releasing
-    // while the device lives on un-does the phase an armed guard was built
-    // for, and reports nothing.
-    const uint32_t importGuardsReleased =
-        VkEncReleaseImportOrdinalGuard(m_vkDevCtx);
-    if (importGuardsReleased != 0) {
-        LOG_S_WARN << "[EncoderExt] Deinitialize released "
-                   << importGuardsReleased
-                   << " import-ordinal guard import(s)" << std::endl;
-    }
-
     m_initialized = false;
     m_computeFilterActive.store(false, std::memory_order_relaxed);
     m_computeFilterInputFormat.store(VK_FORMAT_UNDEFINED,
@@ -5242,7 +5253,7 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
 // Handle exchange
 //=============================================================================
 
-// The view formats a MUTABLE_FORMAT registration must declare, written into
+// The view formats a MUTABLE_FORMAT import must declare, written into
 // |outFormats| (capacity kVkEncMaxViewFormats) and returned as a count.
 //
 // MUTABLE_FORMAT obliges a VkImageFormatListCreateInfo
@@ -5273,21 +5284,18 @@ static uint32_t VkEncCollectViewFormats(
     outFormats[count++] = desc.format;
     // Only when plane views will actually be built. A format list is a
     // CONSTRAINT the create call has to satisfy, not a hint: naming R8_UNORM
-    // on a modifier whose R8 views the device does not support would turn a
-    // registration that works today into a vkCreateImage failure. So the list
-    // names exactly the views this registration will ask for.
+    // on a modifier whose R8 views the device does not support would turn an
+    // import that works into a vkCreateImage failure. So the list names
+    // exactly the views this import will ask for.
     //
     // "Will be built" is VkImageResourceView::Create's condition, NOT the
     // narrower storage-view gate. Both Create() overloads build per-plane
     // views whenever the image is MUTABLE_FORMAT and the derived plane usage
     // is non-zero -- STORAGE is not required by either -- so keying the list
-    // on the storage gate left a MUTABLE_FORMAT-without-STORAGE registration
+    // on the storage gate would leave a MUTABLE_FORMAT-without-STORAGE import
     // with R8/R8G8 views whose formats are absent from the image's format
-    // list (VUID-VkImageViewCreateInfo-pNext-01585). Inert on the shipped
-    // path, where the producer declares imageFlags = 0 and no list is chained
-    // at all, and wrong for the first producer that declares MUTABLE_FORMAT
-    // for any other reason. One condition, so the query, the create and the
-    // views describe one image.
+    // list (VUID-VkImageViewCreateInfo-pNext-01585). One condition, so the
+    // query, the create and the views describe one image.
     if (((desc.imageFlags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) == 0) ||
         (YcbcrVkFormatInfo(desc.format) == nullptr)) {
         return count;
@@ -5316,480 +5324,6 @@ static uint32_t VkEncCollectViewFormats(
 // in short, this function is the ONE place that closes the fd, and only
 // on the failure exits that never handed it to the driver.
 
-// ================= THE dma-buf IMPORT-ORDINAL GUARD ========================
-//
-// DISABLED BY DEFAULT. kVkEncImportOrdinalGuardCount below is 0, so none of
-// this runs in a stock build and every dma-buf import on an NVIDIA device
-// reports the verdict DISABLED. The mechanism is kept compiled, reachable
-// and tested because it is the only lever this library has ever had on the
-// defect described here, and a future driver may make some phase of it worth
-// pulling again. It is NOT a fix, and the block below says why so that
-// nobody re-arms it expecting one.
-//
-// WHAT IS WRONG, AND IT IS NOT OURS TO FIX. A dma-buf image import can come
-// back bound to memory the buffer's contents never reach. THE DEFECT IS IN
-// THE DRIVER'S dma-buf IMPORT PATH.
-// Nothing readable at the import boundary distinguishes a damaged import
-// from a good one -- descriptor, explicit DRM plane layouts, memReqs,
-// vkGetMemoryFdPropertiesKHR mask, chosen memory type and the driver's own
-// vkGetImageSubresourceLayout answer for
-// VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT are identical on both. Only the
-// CONTENT the GPU reads back differs, and there are two damage modes:
-//
-//   CHROMA_ZERO  plane 1 of the imported VkImage does not alias the buffer's
-//                chroma pages; plane 0 does. Correct luma over zero chroma.
-//                A write through this import is SWALLOWED -- the mapping is
-//                dead, so a consumer cannot repair the buffer through it.
-//   ALL_ZERO     Y = U = V = 0 in the buffer itself. The mapping is fine and
-//                a write through it lands; what was lost is the EXPORTER's
-//                write, before this library imported anything at all.
-//
-// Both render as one saturated green frame in a consumer, on every frame the
-// affected buffer serves and on no frame of any other buffer. Legal black
-// would be U = V = 128, so a zeroed plane is missing data and not a black
-// frame -- which is what makes this visible at all.
-//
-// WHAT THE GUARD DOES: IT MOVES THE DAMAGE. IT DOES NOT REMOVE IT.
-// The guard takes K sacrificial dma-buf imports and RETAINS them, so every
-// caller-visible import lands K live-positions later.
-//
-// The damage is PERIODIC in the import ordinal. A run that registers only
-// two or three buffers samples one period at one phase, so a K that moves
-// the damaged ordinals off exactly those buffers reads as a fix. Over enough
-// periods the PROPORTION of damaged imports does not move with K at all.
-// The guard shifts the PHASE of the pattern: it changes WHICH imports are
-// damaged and never HOW MANY. Anyone re-arming this is buying a phase, and
-// owes the next reader which phase and why.
-//
-// AND THERE IS NO CONSUMER-SIDE RECOVERY:
-//   * writing through a damaged import is swallowed (the CHROMA_ZERO mode
-//     above), so a consumer cannot heal a damaged buffer by rewriting it.
-//     Where such a write DOES land, the damage was the producer's lost write
-//     and there was never anything on this side to repair;
-//   * re-importing the same dma-buf at the next ordinal does not rescue it.
-//     Once inflicted, the damage is a property of the BUFFER and not of the
-//     import ordinal that produced it, so retrying the import is not a
-//     workaround either.
-// Those two properties, and not a preference for less code, are why the
-// count is 0.
-//
-// LIFETIME -- BOTH ENDS OF IT, binding again the moment the count is not 0:
-//
-//   * NOT ONE IMPORT EARLY. Freeing a guard hands its live-position straight
-//     back to the next caller import and un-does the phase the count was
-//     chosen for -- silently, because the only symptom is green chroma in
-//     the consumer's output. The guard lives until the device can no longer
-//     import at all.
-//   * NOT ONE CALL LATE. Guard VkImage and VkDeviceMemory still alive when
-//     vkDestroyDevice is called is VUID-vkDestroyDevice-device-05137.
-//     Vulkan has no rule by which a device destroys its children --
-//     vkDestroyDevice destroys nothing but the device, and it is the
-//     application that must have destroyed the children first. Leaving them
-//     leaks two images and two allocations per device and violates the spec
-//     on every teardown, invisibly unless a validation layer is running.
-//
-// The single point that satisfies both is
-// VulkanVideoEncoderExtImpl::Deinitialize(), which the session destructor
-// calls after the encoder is released and every registration retired -- so
-// no further import is reachable -- and before ~VulkanDeviceContext destroys
-// the device. VkEncReleaseImportOrdinalGuard() below is what it calls.
-//
-// COST when re-armed: K VkImage + K VkDeviceMemory and K extra references on
-// the first registered dma-buf, for the lifetime of the VkDevice; no
-// per-frame cost. At the default of 0 none of it is taken, and no per-device
-// registry entry is created either.
-//
-// WHAT IS NOT ESTABLISHED, so the next reader does not over-trust any of it:
-//   * WHY imports are damaged, and why periodically, is not known. The
-//     pattern is an observation, not a model of the driver.
-//   * It applies to the GBM dma-buf import path. A composited lane on the
-//     same driver and the same descriptor shows no damage at all, so some
-//     lane-level precondition is required and is unidentified.
-//   * Whether any K helps on a different driver is unknown: K is a phase,
-//     and the phase-invariance is a property of one import path.
-// Kill switch: VK_VIDEO_ENCODER_NO_IMPORT_ORDINAL_GUARD=1, which reports the
-// same DISABLED verdict the disabled default already reports.
-namespace {
-
-// THE KNOB, and the only line that has to change to re-arm the guard.
-// 0 = disabled: no sacrificial import is taken and every dma-buf import on an
-// NVIDIA device reports DISABLED. Non-zero re-arms it with that many retained
-// imports, which buys a PHASE SHIFT of the driver's damage pattern and not a
-// repair of it -- read the block above before changing this. Two suites will
-// have opinions about a change here, deliberately:
-//   * test/encoder-ext-import-guard pins this value device-free, in CI.
-//   * test/encoder-ext-import-ordinal-guard takes --guard-count=N, which
-//     re-arms its whole positional machinery on hardware for a build that
-//     sets this to N.
-constexpr uint32_t kVkEncImportOrdinalGuardCount = 0;
-
-// Capacity of the per-device retained-image array, deliberately independent
-// of the count above. Two reasons, both concrete: a count of 0 must not
-// produce a zero-length array (not standard C++; -Wpedantic rejects it
-// outright, and no build flag should be relied on to admit it), and the
-// measured phase
-// sweep ran K = 0..4, so the whole sweep stays reachable by editing the one
-// line above.
-constexpr uint32_t kVkEncImportOrdinalGuardCapacity = 4;
-static_assert(kVkEncImportOrdinalGuardCount <= kVkEncImportOrdinalGuardCapacity,
-              "kVkEncImportOrdinalGuardCount must fit the retained-image "
-              "array; raise kVkEncImportOrdinalGuardCapacity with it");
-
-// What one device's guards are. |live| is how many of |images| have actually
-// been imported; it can sit below the requested count after a failed dup(2)
-// or a failed sacrificial import, and the next import on the device tops it
-// up. At the disabled default the guard returns before this is ever reached,
-// and no entry is created at all.
-struct VkEncImportOrdinalGuardEntry {
-    VkDevice           device = VK_NULL_HANDLE;
-    uint32_t           live   = 0;
-    VkEncImportedImage images[kVkEncImportOrdinalGuardCapacity]{};
-};
-
-std::mutex g_importGuardMutex;
-// One entry per VkDevice that has taken guards; erased by
-// VkEncReleaseImportOrdinalGuard when that device is torn down. Guarded by
-// g_importGuardMutex on every access, read and write.
-//
-// KEYED BY DEVICE, not a single slot, and that is a correctness point rather
-// than a generality one. The single slot this replaces carried one VkDevice
-// and one counter, and its device-change branch reset the counter and moved
-// on. With two sessions alive at once that branch fired on every alternation
-// and it (a) ORPHANED the other device's images -- the only handles to them
-// were in the array it had just abandoned, so nothing could ever free them --
-// and (b) lost the record that the other device was already guarded, so it
-// re-guarded it on the next import and grew the leak by two more objects each
-// time. A per-device entry has no such branch: a device's guards are found,
-// or created, and are released exactly once by handle.
-std::vector<VkEncImportOrdinalGuardEntry> g_importGuards;
-
-// Re-entrancy: the guard builds its imports through the very function it is
-// called from, so the nested calls must not try to build guards of their own.
-// It is also what keeps the non-recursive mutex above safe: the nested call
-// returns at the TOP of VkEncEnsureImportOrdinalGuard, above the lock.
-// Dead at the disabled default, which takes no nested import at all.
-thread_local bool g_inImportOrdinalGuard = false;
-
-// What the guard did on THIS thread's most recent import attempt. See
-// VkEncImportOrdinalGuardReport (internal header) for why it is
-// thread_local: the guard produces it deep inside the import and the
-// import's caller reads it back (VkEncGetImportOrdinalGuardReport) on the
-// same thread.
-thread_local VkEncImportOrdinalGuardReport g_importGuardReport{};
-
-void VkEncSetImportGuardVerdict(VkVideoEncoderImportGuardState state,
-                                uint32_t retainedCount,
-                                VkVideoEncoderStatusCode failureStatus,
-                                int32_t failureErrno)
-{
-    g_importGuardReport.state         = state;
-    g_importGuardReport.retainedCount = retainedCount;
-    g_importGuardReport.failureStatus = failureStatus;
-    g_importGuardReport.failureErrno  = failureErrno;
-}
-
-bool VkEncImportOrdinalGuardDisabled()
-{
-    // ONE INITIALIZATION, NOT A SENTINEL. The sentinel form was a
-    // check-then-store on the registration path, which is reached before the
-    // guard-count-zero return and well before any mutex is taken, so two
-    // sessions registering at once both saw -1 and both wrote. A function-local
-    // static with a dynamic initializer is initialized exactly once, and a
-    // build that keeps the thread-safe static guard (the default) makes that
-    // true. (A build that disables it would need std::call_once; const alone
-    // would not make dynamic initialization safe.)
-    //
-    // The predicate is unchanged: absent, empty and leading-zero all mean
-    // enabled. The environment must be settled before concurrent use, which
-    // was already true of the sentinel form.
-    static const bool disabled = []() {
-        const char* env = getenv("VK_VIDEO_ENCODER_NO_IMPORT_ORDINAL_GUARD");
-        return (env != nullptr) && (*env != '\0') && (*env != '0');
-    }();
-    return disabled;
-}
-
-bool VkEncIsNvidiaDevice(const VulkanDeviceContext& vkDevCtx)
-{
-    // BOTH checks are load-bearing, and neither is defensive habit.
-    //
-    // Until the import-ordinal guard existed, VkEncImportExternalImage touched
-    // no INSTANCE-level dispatch at all -- it worked entirely off the device.
-    // The guard calls this on the way in to every dma-buf import, so a context
-    // whose instance table was never populated now reaches a null function
-    // pointer on a path a caller can reach: a test that constructs a bare
-    // VulkanDeviceContext and stubs only the device-level entries the import
-    // itself uses would call through address 0.
-    //
-    // The direction of the failure is chosen, not incidental. Returning false
-    // means "not NVIDIA", so the guard reports NOT_NVIDIA and does not run, and
-    // the import proceeds exactly as it did before the guard was added. A
-    // workaround that cannot confirm the vendor it works around MUST NOT run --
-    // the alternative is applying an NVIDIA-specific ordering hack to an
-    // unknown driver.
-    //
-    // The physical-device check follows the convention already in
-    // VulkanDeviceContext.h, which gates GetPhysicalDeviceMemoryProperties on
-    // `if (m_physDevice)` for the same reason.
-    if ((vkDevCtx.GetPhysicalDeviceProperties == nullptr) ||
-        (vkDevCtx.getPhysicalDevice() == VK_NULL_HANDLE)) {
-        return false;
-    }
-    VkPhysicalDeviceProperties props{};
-    vkDevCtx.GetPhysicalDeviceProperties(vkDevCtx.getPhysicalDevice(), &props);
-    return props.vendorID == 0x10DE;
-}
-
-// Index of |device|'s entry, appending an empty one on its first guarded
-// import. Caller holds g_importGuardMutex. An INDEX and not a reference or a
-// pointer: the caller keeps using it across a nested VkEncImportExternalImage,
-// and a reference into a std::vector is exactly the thing a push_back would
-// invalidate.
-size_t VkEncImportOrdinalGuardEntryIndexLocked(VkDevice device)
-{
-    for (size_t i = 0; i < g_importGuards.size(); i++) {
-        if (g_importGuards[i].device == device) {
-            return i;
-        }
-    }
-    VkEncImportOrdinalGuardEntry entry{};
-    entry.device = device;
-    g_importGuards.push_back(entry);
-    return g_importGuards.size() - 1;
-}
-
-}  // namespace
-
-void VkEncResetImportOrdinalGuardReport()
-{
-    g_importGuardReport = VkEncImportOrdinalGuardReport{};
-#if defined(__linux__)
-    // requestedCount is a BUILD constant, not an outcome, so it is stamped
-    // here rather than on the paths that reach the guard: it must be
-    // readable even when the guard never runs. Zero off Linux, where the
-    // guard is not compiled -- and zero on Linux too now that the guard is
-    // retired, which costs a second property this field can carry.
-    // While the count was non-zero it also PROVED the library had written
-    // the caller's struct, every other field's "nothing happened" value
-    // being 0, which is what an untouched struct already holds. What is left
-    // of that proof is |state|: it is non-zero on every path the import
-    // itself reaches (NOT_APPLICABLE, NOT_NVIDIA, DISABLED, COMPLETE,
-    // INCOMPLETE). A registration that never reaches the import reports
-    // NOT_EVALUATED and is, at the disabled default, indistinguishable from a
-    // struct nothing wrote -- so a caller or a test that needs the write
-    // proved has to poison the struct first and assert the poison is gone.
-    // test/encoder-ext-import-guard C1 does exactly that.
-    g_importGuardReport.requestedCount = kVkEncImportOrdinalGuardCount;
-#endif
-}
-
-void VkEncGetImportOrdinalGuardReport(VkEncImportOrdinalGuardReport* outReport)
-{
-    if (outReport != nullptr) {
-        *outReport = g_importGuardReport;
-    }
-}
-
-// Runs at the top of every import: a no-op on EVERY import at the retired
-// default (count 0), and a no-op after the first one when armed. |osHandle|
-// is only ever dup()'d here -- the caller's fd is untouched and its ownership
-// rule is unaffected on every path.
-static void VkEncEnsureImportOrdinalGuard(
-    const VulkanDeviceContext& vkDevCtx,
-    const VkVideoEncoderExternalImageDescriptor& desc,
-    uint64_t osHandle)
-{
-#if defined(__linux__)
-    if (g_inImportOrdinalGuard) {
-        // A nested (sacrificial) import. It writes NO verdict: the record
-        // belongs to the OUTER, caller-visible import, and overwriting it
-        // here would report the guard's own recursion instead of what the
-        // guard achieved.
-        return;
-    }
-    // EVERY remaining exit names a verdict, and that is the point of this
-    // block rather than a tidiness preference. The two failure paths below
-    // return SILENTLY when the report they log is discarded -- silenceStdio
-    // discards it -- so a workaround that had degraded back to the defect
-    // would be indistinguishable from one that was working. The verdict is
-    // the channel that survives that. See VkEncImportOrdinalGuardReport.
-    if (VkEncImportOrdinalGuardDisabled()) {
-        VkEncSetImportGuardVerdict(
-            VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_DISABLED, 0,
-            VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-        return;
-    }
-    if (desc.handleType != VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF) {
-        VkEncSetImportGuardVerdict(
-            VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_APPLICABLE, 0,
-            VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-        return;
-    }
-    if (!VkEncIsNvidiaDevice(vkDevCtx)) {
-        // Measured on NVIDIA only. A workaround must not run where the defect
-        // it works around has never been observed.
-        VkEncSetImportGuardVerdict(
-            VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_NVIDIA, 0,
-            VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-        return;
-    }
-    if (kVkEncImportOrdinalGuardCount == 0) {
-        // THE RETIRED DEFAULT, and DISABLED is the verdict on purpose.
-        //
-        // Falling through would reach the already-satisfied early return
-        // below, whose 0 >= 0 is true, and report COMPLETE -- which
-        // VkVideoEncoderImportGuardState, in vulkan_video_encoder_ext_internal.h,
-        // defines as "retainedCount == requestedCount, caller imports land at
-        // live-position requestedCount+1 or later". The
-        // arithmetic holds at 0 == 0 and the claim does not: nothing was
-        // moved anywhere. A verdict that says a workaround ran on a build
-        // that removed it is the exact failure this reporting channel was
-        // added to prevent, and it would travel straight into the embedder's
-        // per-registration log.
-        //
-        // DISABLED already means "the workaround is off deliberately", which
-        // is what a build-time count of 0 is. Reported BEFORE the registry
-        // lock, so a disabled build also creates no per-device entry for the
-        // release path to find.
-        VkEncSetImportGuardVerdict(
-            VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_DISABLED, 0,
-            VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-        return;
-    }
-    std::lock_guard<std::mutex> lock(g_importGuardMutex);
-    VkDevice device = vkDevCtx;
-    if (device == VK_NULL_HANDLE) {
-        // No device to hold a position on. Outside the guard's scope in the
-        // same sense a non-dma-buf handle type is, and reported the same
-        // way -- the import itself is about to fail on its own terms.
-        VkEncSetImportGuardVerdict(
-            VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_APPLICABLE, 0,
-            VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-        return;
-    }
-    const size_t entryIdx = VkEncImportOrdinalGuardEntryIndexLocked(device);
-    if (g_importGuards[entryIdx].live >= kVkEncImportOrdinalGuardCount) {
-        VkEncSetImportGuardVerdict(
-            VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_COMPLETE,
-            g_importGuards[entryIdx].live,
-            VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-        return;
-    }
-    while (g_importGuards[entryIdx].live < kVkEncImportOrdinalGuardCount) {
-        const int guardFd = dup((int)osHandle);
-        if (guardFd < 0) {
-            // Captured before anything else can clobber it; the verdict
-            // carries it, and errno is the whole diagnosis on this path
-            // (EMFILE under fd pressure is the realistic one).
-            const int dupErrno = errno;
-            LOG_S_ERROR << "[EncoderExt] import-ordinal guard: dup failed ("
-                       << dupErrno << "); the guard is INCOMPLETE at "
-                       << g_importGuards[entryIdx].live << " of "
-                       << kVkEncImportOrdinalGuardCount << std::endl;
-            VkEncSetImportGuardVerdict(
-                VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_INCOMPLETE,
-                g_importGuards[entryIdx].live,
-                VK_VIDEO_ENCODER_STATUS_ERROR_IMPORT_FAILED, dupErrno);
-            return;
-        }
-        VkEncImportedImage guard{};
-        g_inImportOrdinalGuard = true;
-        const VkVideoEncoderStatusCode status =
-            VkEncImportExternalImage(vkDevCtx, desc, (uint64_t)guardFd, &guard);
-        g_inImportOrdinalGuard = false;
-        if (status != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
-            // The import consumed or closed guardFd itself on every exit.
-            LOG_S_ERROR << "[EncoderExt] import-ordinal guard: sacrificial "
-                          "import "
-                       << (g_importGuards[entryIdx].live + 1) << " failed ("
-                       << (int)status << "); the guard is INCOMPLETE -- this "
-                          "build asked to shift the import-damage phase and "
-                          "did not get the shift it asked for" << std::endl;
-            VkEncSetImportGuardVerdict(
-                VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_INCOMPLETE,
-                g_importGuards[entryIdx].live, status, 0);
-            return;
-        }
-        // Recorded BEFORE live is bumped, so live is never a count of
-        // handles the registry does not actually hold -- the release below
-        // walks exactly [0, live).
-        g_importGuards[entryIdx].images[g_importGuards[entryIdx].live] = guard;
-        g_importGuards[entryIdx].live++;
-    }
-    VkEncSetImportGuardVerdict(
-        VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_COMPLETE,
-        g_importGuards[entryIdx].live, VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-    LOG_S_WARN << "[EncoderExt] import-ordinal guard: "
-               << kVkEncImportOrdinalGuardCount
-               << " sacrificial dma-buf imports retained; caller imports now "
-                  "start at live-position "
-               << (kVkEncImportOrdinalGuardCount + 1)
-               << ". This is a PHASE SHIFT of the driver's import-damage "
-                  "pattern and not a repair of it; the measured damage rate "
-                  "is unchanged. See the block above this function."
-               << std::endl;
-#else
-    (void)vkDevCtx;
-    (void)desc;
-    (void)osHandle;
-#endif
-}
-// The other end of the guard's lifetime. Contract and the reason the count is
-// returned rather than only printed: vulkan_video_encoder_ext_internal.h.
-uint32_t VkEncReleaseImportOrdinalGuard(const VulkanDeviceContext& vkDevCtx)
-{
-#if defined(__linux__)
-    const VkDevice device = vkDevCtx;
-    if (device == VK_NULL_HANDLE) {
-        return 0;
-    }
-    // Taken off the registry under the lock, destroyed outside it. Removing
-    // it first is what makes a second call a no-op instead of a double free,
-    // and it means no other thread can find these handles while they are
-    // being destroyed.
-    VkEncImportOrdinalGuardEntry doomed{};
-    {
-        std::lock_guard<std::mutex> lock(g_importGuardMutex);
-        for (size_t i = 0; i < g_importGuards.size(); i++) {
-            if (g_importGuards[i].device != device) {
-                continue;
-            }
-            doomed = g_importGuards[i];
-            g_importGuards.erase(g_importGuards.begin() + (ptrdiff_t)i);
-            break;
-        }
-    }
-    // NO QUEUE WAIT IS OWED HERE, and that is a property of what a guard is
-    // rather than an assumption about the caller. A guard image is imported
-    // and then never touched again -- it is never written into a command
-    // buffer, never bound, never transitioned, never submitted -- so
-    // VUID-vkDestroyImage-image-01000 ("must not be in use by the device") is
-    // satisfied by construction. The registrations destroyed above it in
-    // Deinitialize need the encoder release and the DeviceWaitIdle; these do
-    // not.
-    //
-    // Image before memory: freeing a VkDeviceMemory that a live VkImage is
-    // still bound to is VUID-vkFreeMemory-memory-00677. Same order
-    // DestroyResourceLocked uses.
-    for (uint32_t i = 0; i < doomed.live; i++) {
-        if (doomed.images[i].image != VK_NULL_HANDLE) {
-            vkDevCtx.DestroyImage(device, doomed.images[i].image, nullptr);
-        }
-        if (doomed.images[i].memory != VK_NULL_HANDLE) {
-            // This is also what closes the dup()'d dma-buf fd the guard took:
-            // from the vkAllocateMemory import chain onward the fd belongs to
-            // the VkDeviceMemory, and vkFreeMemory is its release (design
-            // section 2.3). Nothing close()s it here or anywhere else.
-            vkDevCtx.FreeMemory(device, doomed.images[i].memory, nullptr);
-        }
-    }
-    return doomed.live;
-#else
-    (void)vkDevCtx;
-    return 0;
-#endif
-}
-// ============== END dma-buf IMPORT-ORDINAL GUARD ===========================
 
 VkVideoEncoderStatusCode VkEncImportExternalImage(
     const VulkanDeviceContext& vkDevCtx,
@@ -5798,14 +5332,6 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     VkEncImportedImage* outImport)
 {
     VkDevice device = vkDevCtx;
-
-    // The import-ordinal guard, RETIRED BY DEFAULT: at the shipped count of 0
-    // this returns immediately with the verdict DISABLED and takes no
-    // imports. It stays on the path so the knob remains reachable, reported
-    // and tested. When armed it shifts which import ordinals the driver
-    // damages -- not how many -- and is a no-op after the first call, and on
-    // every non-NVIDIA / non-dma-buf import.
-    VkEncEnsureImportOrdinalGuard(vkDevCtx, desc, osHandle);
 
     const bool isDrmModifier =
         (desc.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT);
@@ -5885,7 +5411,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     VkResult result =
         vkDevCtx.CreateImage(device, &imageCI, nullptr, &outImport->image);
     if (result != VK_SUCCESS) {
-        LOG_S_ERROR << "[EncoderExt] register: vkCreateImage failed ("
+        LOG_S_ERROR << "[EncoderExt] import: vkCreateImage failed ("
                    << result << ")" << std::endl;
         // Nothing was handed to the driver yet: the fd is the library's
         // to close, on this exit like every other pre-handoff one.
@@ -5936,7 +5462,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
                 // zero mask as unconstrained and would pick a type this fd
                 // cannot legally import into (garbage reads where
                 // import-capable heaps are segregated).
-                LOG_S_WARN << "[EncoderExt] register: "
+                LOG_S_WARN << "[EncoderExt] import: "
                               "vkGetMemoryFdPropertiesKHR reports no "
                               "importable memory type for this fd"
                            << std::endl;
@@ -5950,7 +5476,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
             typeRequest.authoritativeMask = fdProps.memoryTypeBits;
         } else {
             outImport->heuristicSelections += 1;
-            LOG_S_WARN << "[EncoderExt] register: "
+            LOG_S_WARN << "[EncoderExt] import: "
                        << "vkGetMemoryFdPropertiesKHR unavailable ("
                        << propsResult << "); selecting the memory type "
                        << "heuristically (R-5 fallback)" << std::endl;
@@ -5970,7 +5496,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
         // validates allocation properties downstream, where nothing names
         // the cause.
         if (desc.memoryTypeIndex == UINT32_MAX) {
-            LOG_S_WARN << "[EncoderExt] register: an OPAQUE_WIN32 import "
+            LOG_S_WARN << "[EncoderExt] import: an OPAQUE_WIN32 import "
                        << "requires the exporter's memoryTypeIndex"
                        << std::endl;
             vkDevCtx.DestroyImage(device, outImport->image, nullptr);
@@ -5991,7 +5517,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
                 device, vkHandleType, (HANDLE)osHandle, &win32Props);
         }
         if (propsResult != VK_SUCCESS) {
-            LOG_S_ERROR << "[EncoderExt] register: "
+            LOG_S_ERROR << "[EncoderExt] import: "
                        << "vkGetMemoryWin32HandlePropertiesKHR failed ("
                        << propsResult << "); refusing to guess a memory "
                        << "type on WDDM" << std::endl;
@@ -6004,7 +5530,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
             // constraint, not an absence of one: the selector reads a zero
             // mask as unconstrained and would pick a type this handle
             // cannot legally import into.
-            LOG_S_WARN << "[EncoderExt] register: "
+            LOG_S_WARN << "[EncoderExt] import: "
                           "vkGetMemoryWin32HandlePropertiesKHR reports no "
                           "importable memory type for this handle"
                        << std::endl;
@@ -6024,7 +5550,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     VkEncSelectImportMemoryType(typeRequest, memProps, &typeChoice);
 
     if (typeChoice.outcome == VK_ENC_IMPORT_MEMTYPE_NONE) {
-        LOG_S_WARN << "[EncoderExt] register: no importable memory type: "
+        LOG_S_WARN << "[EncoderExt] import: no importable memory type: "
                    << "requirements mask 0x" << std::hex
                    << typeRequest.requirementsMask
                    << ", handle-properties mask 0x"
@@ -6040,7 +5566,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     }
     if (typeChoice.exporterIndexOverridden == VK_TRUE) {
         outImport->exporterOverrides += 1;
-        LOG_S_WARN << "[EncoderExt] register: exporter memoryTypeIndex "
+        LOG_S_WARN << "[EncoderExt] import: exporter memoryTypeIndex "
                    << desc.memoryTypeIndex << " is outside the importable "
                    << "mask; using type " << typeChoice.index << " instead"
                    << std::endl;
@@ -6050,7 +5576,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
         // Opaque import without the exporter's index: the selection is a
         // heuristic, and a heuristic here must never be silent.
         outImport->heuristicSelections += 1;
-        LOG_S_WARN << "[EncoderExt] register: opaque import without the "
+        LOG_S_WARN << "[EncoderExt] import: opaque import without the "
                    << "exporter's memoryTypeIndex; type " << typeChoice.index
                    << " selected heuristically (R-5 fallback)" << std::endl;
     }
@@ -6062,7 +5588,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     // header accepts 0 ("unknown") WITH A LOG, deliberately -- a silent
     // fallback leaves no audit trail when that size mismatch bites.
     if (desc.allocationSize == 0) {
-        LOG_S_WARN << "[EncoderExt] register: descriptor allocationSize is "
+        LOG_S_WARN << "[EncoderExt] import: descriptor allocationSize is "
                       "0 (unknown); falling back to "
                       "vkGetImageMemoryRequirements size " << memReqs.size
                    << " -- prefer the exporter-reported size for dma-buf"
@@ -6080,7 +5606,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     // (VUID-VkMemoryAllocateInfo-allocationSize-01742), and a dma-buf
     // allocation larger than the buffer is equally unbindable.
     if ((desc.allocationSize != 0) && (desc.allocationSize < memReqs.size)) {
-        LOG_S_WARN << "[EncoderExt] register: exporter allocationSize "
+        LOG_S_WARN << "[EncoderExt] import: exporter allocationSize "
                    << desc.allocationSize << " is below the image's memory "
                       "requirement " << memReqs.size << "; a dedicated "
                       "allocation bound at offset 0 cannot cover the image"
@@ -6130,7 +5656,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     result = vkDevCtx.AllocateMemory(device, &allocInfo, nullptr,
                                      &outImport->memory);
     if (result != VK_SUCCESS) {
-        LOG_S_ERROR << "[EncoderExt] register: import allocation failed ("
+        LOG_S_ERROR << "[EncoderExt] import: import allocation failed ("
                    << result << ")" << std::endl;
         vkDevCtx.DestroyImage(device, outImport->image, nullptr);
         outImport->image = VK_NULL_HANDLE;
@@ -6155,6 +5681,324 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     outImport->allocationSize = allocInfo.allocationSize;
     outImport->result = VK_ENC_IMPORT_SUCCESS;
     return VK_VIDEO_ENCODER_STATUS_SUCCESS;
+}
+
+//=============================================================================
+// Imported submit
+//=============================================================================
+
+namespace {
+
+// An image imported for one frame and the memory bound to it. The frame's
+// VkVideoEncodeFrameInfo holds the only reference and drops it in
+// Reset(true), after the frame's command buffers have completed, so the
+// destructor runs when no submitted work can still read the image. Freeing
+// the memory releases the fd the import handed to it.
+class VkEncImportedInputImage : public VkVideoRefCountBase {
+public:
+    VkEncImportedInputImage(const VulkanDeviceContext& vkDevCtx,
+                            const VkEncImportedImage& imported)
+        : m_vkDevCtx(vkDevCtx)
+        , m_image(imported.image)
+        , m_memory(imported.memory)
+    { }
+
+    ~VkEncImportedInputImage() override
+    {
+        // Image before memory: VUID-vkFreeMemory-memory-00677.
+        if (m_image != VK_NULL_HANDLE) {
+            m_vkDevCtx.DestroyImage(m_vkDevCtx, m_image, nullptr);
+        }
+        if (m_memory != VK_NULL_HANDLE) {
+            m_vkDevCtx.FreeMemory(m_vkDevCtx, m_memory, nullptr);
+        }
+    }
+
+    VkEncImportedInputImage(const VkEncImportedInputImage&) = delete;
+    VkEncImportedInputImage& operator=(const VkEncImportedInputImage&) = delete;
+
+private:
+    const VulkanDeviceContext& m_vkDevCtx;
+    VkImage                    m_image;
+    VkDeviceMemory             m_memory;
+};
+
+bool VkEncUuidIsZero(const uint8_t* uuid, size_t size)
+{
+    for (size_t i = 0; i < size; i++) {
+        if (uuid[i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImportDescriptor(
+    const VkVideoEncoderExternalImageDescriptor& desc) const
+{
+    if ((desc.sType != VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR) ||
+        (desc.pNext != nullptr)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_STRUCTURE_TYPE_UNKNOWN;
+    }
+    const bool isDmaBuf =
+        (desc.handleType == VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF);
+    if (!isDmaBuf &&
+        (desc.handleType != VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_OPAQUE_FD)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED;
+    }
+    if ((desc.width == 0) || (desc.height == 0)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_EXTENT_INVALID;
+    }
+    if (desc.format == VK_FORMAT_UNDEFINED) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_FORMAT_UNSUPPORTED;
+    }
+    if (desc.sharingMode != VK_SHARING_MODE_EXCLUSIVE) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_SHARING_MODE_UNSUPPORTED;
+    }
+
+    // The encoder copies out of a LINEAR image and encodes any other tiling
+    // directly, and an import carries exactly the usage the exporter
+    // declared.
+    const VkImageUsageFlags needed =
+        (desc.tiling == VK_IMAGE_TILING_LINEAR)
+            ? VkImageUsageFlags(VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            : VkImageUsageFlags(VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR);
+    if ((desc.imageUsage & needed) == 0) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_USAGE_INSUFFICIENT;
+    }
+
+    // A DRM format modifier is the tiling of a dma-buf, named by the
+    // modifier and laid out by the plane table; any other tiling carries
+    // neither.
+    const bool isDrmTiling =
+        (desc.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT);
+    if (isDrmTiling != (desc.hasDrmFormatModifier == VK_TRUE)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_MODIFIER_UNSUPPORTED;
+    }
+    if (isDrmTiling && !isDmaBuf) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED;
+    }
+    if (desc.planeCount > VK_VIDEO_ENCODER_MAX_PLANES) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID;
+    }
+    if (isDrmTiling) {
+        if (desc.planeCount == 0) {
+            return VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID;
+        }
+        for (uint32_t i = 0; i < desc.planeCount; i++) {
+            if (desc.planeLayouts[i].rowPitch == 0) {
+                return VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID;
+            }
+            // Two planes at one offset cannot share one memory object.
+            for (uint32_t j = 0; j < i; j++) {
+                if (desc.planeLayouts[j].offset == desc.planeLayouts[i].offset) {
+                    return VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID;
+                }
+            }
+        }
+    }
+
+    // The extensions the import itself calls into.
+    if ((m_vkDevCtx.FindRequiredDeviceExtension(
+             VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) == nullptr) ||
+        (isDmaBuf && (m_vkDevCtx.FindRequiredDeviceExtension(
+                          VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME) == nullptr)) ||
+        (isDrmTiling && (m_vkDevCtx.FindRequiredDeviceExtension(
+                             VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME) == nullptr))) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_EXTENSION_MISSING;
+    }
+
+    // Provenance. A stated device identity must be this device's; a stated
+    // driver identity binds on OPAQUE_FD, whose payload only the same driver
+    // can import, and not on a dma-buf, which is a kernel object.
+    const VkPhysicalDevice physDevice = m_vkDevCtx.getPhysicalDevice();
+    VkPhysicalDeviceIDProperties idProps{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+    VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    props2.pNext = &idProps;
+    m_vkDevCtx.GetPhysicalDeviceProperties2(physDevice, &props2);
+    if (!VkEncUuidIsZero(desc.deviceUUID, VK_UUID_SIZE) &&
+        (memcmp(desc.deviceUUID, idProps.deviceUUID, VK_UUID_SIZE) != 0)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH;
+    }
+    if (!isDmaBuf && !VkEncUuidIsZero(desc.driverUUID, VK_UUID_SIZE) &&
+        (memcmp(desc.driverUUID, idProps.driverUUID, VK_UUID_SIZE) != 0)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH;
+    }
+    if ((desc.deviceLUIDValid == VK_TRUE) && (idProps.deviceLUIDValid == VK_TRUE) &&
+        (memcmp(desc.deviceLUID, idProps.deviceLUID, VK_LUID_SIZE) != 0)) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH;
+    }
+
+    // A modifier's plane count is the modifier's, not the caller's
+    // (VUID-VkImageDrmFormatModifierExplicitCreateInfoEXT-drmFormatModifierPlaneCount-02265).
+    if (isDrmTiling) {
+        VkDrmFormatModifierPropertiesListEXT modifierList{
+            VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
+        VkFormatProperties2 formatProps{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+        formatProps.pNext = &modifierList;
+        m_vkDevCtx.GetPhysicalDeviceFormatProperties2(physDevice, desc.format, &formatProps);
+        std::vector<VkDrmFormatModifierPropertiesEXT> modifiers(
+            modifierList.drmFormatModifierCount);
+        modifierList.pDrmFormatModifierProperties = modifiers.data();
+        m_vkDevCtx.GetPhysicalDeviceFormatProperties2(physDevice, desc.format, &formatProps);
+        bool found = false;
+        for (uint32_t i = 0; i < modifierList.drmFormatModifierCount; i++) {
+            if (modifiers[i].drmFormatModifier != desc.drmFormatModifier) {
+                continue;
+            }
+            found = true;
+            if (modifiers[i].drmFormatModifierPlaneCount != desc.planeCount) {
+                return VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID;
+            }
+        }
+        if (!found) {
+            return VK_VIDEO_ENCODER_STATUS_ERROR_MODIFIER_UNSUPPORTED;
+        }
+    }
+
+    // Whether this device creates the image at all, imports it through this
+    // handle type, and within which limits.
+    VkPhysicalDeviceExternalImageFormatInfo externalInfo{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO};
+    externalInfo.handleType = isDmaBuf ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
+                                       : VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+    VkPhysicalDeviceImageDrmFormatModifierInfoEXT modifierInfo{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT};
+    modifierInfo.drmFormatModifier = desc.drmFormatModifier;
+    modifierInfo.sharingMode = desc.sharingMode;
+    if (isDrmTiling) {
+        externalInfo.pNext = &modifierInfo;
+    }
+    VkPhysicalDeviceImageFormatInfo2 formatInfo{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2};
+    formatInfo.pNext = &externalInfo;
+    formatInfo.format = desc.format;
+    formatInfo.type = (desc.imageType == 0) ? VK_IMAGE_TYPE_2D : desc.imageType;
+    formatInfo.tiling = desc.tiling;
+    formatInfo.usage = desc.imageUsage;
+    formatInfo.flags = desc.imageFlags;
+    VkExternalImageFormatProperties externalProps{
+        VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
+    VkImageFormatProperties2 imageProps{VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2};
+    imageProps.pNext = &externalProps;
+    if (m_vkDevCtx.GetPhysicalDeviceImageFormatProperties2(
+            physDevice, &formatInfo, &imageProps) != VK_SUCCESS) {
+        return isDrmTiling ? VK_VIDEO_ENCODER_STATUS_ERROR_MODIFIER_UNSUPPORTED
+                           : VK_VIDEO_ENCODER_STATUS_ERROR_FORMAT_UNSUPPORTED;
+    }
+    if ((externalProps.externalMemoryProperties.externalMemoryFeatures &
+         VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) == 0) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED;
+    }
+    if (VkEncDescriptorWithinCreationLimits(desc, imageProps.imageFormatProperties) !=
+        VK_TRUE) {
+        return VK_VIDEO_ENCODER_STATUS_ERROR_EXTENT_INVALID;
+    }
+    return VK_VIDEO_ENCODER_STATUS_SUCCESS;
+}
+
+VkResult VulkanVideoEncoderExtImpl::SubmitImportedFrame(
+    const VkVideoEncoderExternalImageDescriptor& desc,
+    uint64_t osHandle,
+    const VkVideoEncodeInputFrame& frame,
+    VkVideoEncoderStatusCode* pImportStatus)
+{
+    VkVideoEncoderStatusCode unusedStatus = VK_VIDEO_ENCODER_STATUS_SUCCESS;
+    VkVideoEncoderStatusCode& status =
+        (pImportStatus != nullptr) ? *pImportStatus : unusedStatus;
+    status = VK_VIDEO_ENCODER_STATUS_SUCCESS;
+
+#if defined(__linux__)
+    // An ownership mode outside the enumeration names no rule for the fd,
+    // so the fd is left exactly as the caller handed it.
+    if ((desc.ownership != VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_TRANSFER) &&
+        (desc.ownership != VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_BORROW)) {
+        status = VK_VIDEO_ENCODER_STATUS_ERROR_STRUCTURE_TYPE_UNKNOWN;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const bool isFdType =
+        (desc.handleType == VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_OPAQUE_FD) ||
+        (desc.handleType == VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF);
+    const int callerFd = (int)(int64_t)osHandle;
+    if ((int64_t)osHandle < 0 || (int64_t)osHandle > INT32_MAX) {
+        status = VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // From here the library holds exactly one fd it must consume on every
+    // path: the caller's under TRANSFER, its own duplicate under BORROW.
+    int ownedFd = callerFd;
+    if (desc.ownership == VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_BORROW) {
+        ownedFd = fcntl(callerFd, F_DUPFD_CLOEXEC, 0);
+        if (ownedFd < 0) {
+            status = VK_VIDEO_ENCODER_STATUS_ERROR_IMPORT_FAILED;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+    auto refuse = [&](VkVideoEncoderStatusCode code) {
+        close(ownedFd);
+        status = code;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    };
+
+    if (!isFdType) {
+        return refuse(VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED);
+    }
+    if ((frame.sType != VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_FRAME) ||
+        (frame.pNext != nullptr)) {
+        return refuse(VK_VIDEO_ENCODER_STATUS_ERROR_STRUCTURE_TYPE_UNKNOWN);
+    }
+    // A session that has started shutting down, or that has no device of
+    // its own to import onto, takes no import.
+    if (m_shutdownStarted.load(std::memory_order_acquire) ||
+        !m_initialized.load() || (m_nullBackend != nullptr)) {
+        return refuse(VK_VIDEO_ENCODER_STATUS_ERROR_NOT_INITIALIZED);
+    }
+    const VkVideoEncoderStatusCode valid = ValidateImportDescriptor(desc);
+    if (valid != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
+        return refuse(valid);
+    }
+
+    // The import consumes ownedFd on every exit (see its declaration).
+    VkEncImportedImage imported{};
+    const VkVideoEncoderStatusCode importStatus =
+        VkEncImportExternalImage(m_vkDevCtx, desc, (uint64_t)ownedFd, &imported);
+    if (importStatus != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
+        status = importStatus;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const VkSharedBaseObj<VkVideoRefCountBase> owner =
+        std::make_shared<VkEncImportedInputImage>(m_vkDevCtx, imported);
+
+    VkVideoEncodeInputFrame importedFrame = frame;
+    importedFrame.image = imported.image;
+    importedFrame.format = desc.format;
+    importedFrame.width = desc.width;
+    importedFrame.height = desc.height;
+    importedFrame.imageTiling = desc.tiling;
+    switch (desc.residency) {
+        case VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL:
+            importedFrame.inputResidency = VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;
+            break;
+        case VK_VIDEO_ENCODER_INPUT_RESIDENCY_FOREIGN:
+        case VK_VIDEO_ENCODER_INPUT_RESIDENCY_AUTO:
+        default:
+            importedFrame.inputResidency = VK_VIDEO_ENCODER_INPUT_RESIDENCY_FOREIGN;
+            break;
+    }
+    // A refusal before the frame node takes |owner| releases the image here,
+    // when this reference drops; nothing was submitted that reads it.
+    return SubmitExternalFrameCommon(importedFrame, nullptr, owner);
+#else
+    (void)desc;
+    (void)osHandle;
+    (void)frame;
+    status = VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED;
+    return VK_ERROR_INITIALIZATION_FAILED;
+#endif
 }
 
 //=============================================================================

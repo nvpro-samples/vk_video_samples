@@ -199,6 +199,118 @@ Result FromVkResult(VkResult result, const char* detail)
     }
 }
 
+// A refused import in this interface's terms. The status names what was
+// wrong with the description; the code says whether the caller can fix it.
+Result FromImportStatus(VkVideoEncoderStatusCode status)
+{
+    switch (status) {
+    case VK_VIDEO_ENCODER_STATUS_SUCCESS:
+        return Result();
+    case VK_VIDEO_ENCODER_STATUS_ERROR_STRUCTURE_TYPE_UNKNOWN:
+        return Result(ResultCode::InvalidArgument, "the image description is malformed");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH:
+        return Result(ResultCode::InvalidArgument,
+                      "the image was allocated on a different device");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED:
+        return Result(ResultCode::UnsupportedFeature,
+                      "this device does not import the image through that handle type");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_EXTENSION_MISSING:
+        return Result(ResultCode::UnsupportedFeature,
+                      "the session device lacks an extension the import needs");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_FORMAT_UNSUPPORTED:
+        return Result(ResultCode::UnsupportedFormat,
+                      "this device does not import an image of that format and usage");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_MODIFIER_UNSUPPORTED:
+        return Result(ResultCode::UnsupportedFormat,
+                      "the DRM format modifier and the tiling do not describe an "
+                      "importable image");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_USAGE_INSUFFICIENT:
+        return Result(ResultCode::InvalidArgument,
+                      "the image usage allows neither a transfer read nor an encode read");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID:
+        return Result(ResultCode::InvalidArgument, "the plane layout is invalid");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_ALLOCATION_SIZE_INVALID:
+        return Result(ResultCode::InvalidArgument,
+                      "the allocation size is smaller than the image needs");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_MEMORY_TYPE_UNSUPPORTED:
+        return Result(ResultCode::InvalidArgument,
+                      "no memory type of this device imports the allocation");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_SHARING_MODE_UNSUPPORTED:
+        return Result(ResultCode::InvalidArgument, "the image sharing mode is not exclusive");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_EXTENT_INVALID:
+        return Result(ResultCode::OutOfRange,
+                      "the image extent is zero or beyond what the device creates");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_NOT_INITIALIZED:
+        return Result(ResultCode::NotConfigured, "the session takes no more frames");
+    case VK_VIDEO_ENCODER_STATUS_ERROR_IMPORT_FAILED:
+        return Result(ResultCode::InternalError, "the image import failed");
+    default:
+        return Result(ResultCode::InternalError, "the image import was refused");
+    }
+}
+
+// The interface's description of an fd-backed image, as the descriptor API's
+// import takes it. Nothing is inferred: every field the import reads comes
+// from the caller's ExternalImage.
+VkVideoEncoderExternalImageDescriptor ToImportDescriptor(const ExternalImage& image)
+{
+    VkVideoEncoderExternalImageDescriptor desc{};
+    desc.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR;
+    desc.pNext = nullptr;
+    desc.handleType = (image.handleType == ExternalHandleType::DmaBuf)
+                          ? VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF
+                          : VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_OPAQUE_FD;
+    desc.format      = image.format;
+    desc.width       = image.width;
+    desc.height      = image.height;
+    desc.tiling      = image.tiling;
+    desc.imageUsage  = image.usage;
+    desc.imageFlags  = image.createFlags;
+    desc.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    desc.hasDrmFormatModifier = image.hasDrmFormatModifier ? VK_TRUE : VK_FALSE;
+    desc.drmFormatModifier    = image.drmFormatModifier;
+    desc.planeCount = image.planeCount;
+    for (uint32_t i = 0; (i < image.planeCount) && (i < kMaxPlanes) &&
+                         (i < VK_VIDEO_ENCODER_MAX_PLANES); ++i) {
+        desc.planeLayouts[i].offset   = image.planeLayouts[i].offset;
+        desc.planeLayouts[i].size     = image.planeLayouts[i].size;
+        desc.planeLayouts[i].rowPitch = image.planeLayouts[i].rowPitch;
+    }
+    desc.allocationSize  = image.allocationSize;
+    desc.memoryTypeBits  = image.memoryTypeBits;
+    desc.memoryTypeIndex = image.memoryTypeIndex;
+    std::copy(std::begin(image.deviceUUID), std::end(image.deviceUUID),
+              std::begin(desc.deviceUUID));
+    std::copy(std::begin(image.driverUUID), std::end(image.driverUUID),
+              std::begin(desc.driverUUID));
+    std::copy(std::begin(image.deviceLUID), std::end(image.deviceLUID),
+              std::begin(desc.deviceLUID));
+    desc.deviceLUIDValid = image.deviceLuidValid ? VK_TRUE : VK_FALSE;
+    desc.defaultLayout = image.layout;
+    switch (image.residency) {
+    case Residency::Local:   desc.residency = VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;   break;
+    case Residency::Foreign: desc.residency = VK_VIDEO_ENCODER_INPUT_RESIDENCY_FOREIGN; break;
+    case Residency::Auto:
+    default:                 desc.residency = VK_VIDEO_ENCODER_INPUT_RESIDENCY_AUTO;    break;
+    }
+    desc.existingImage = VK_NULL_HANDLE;
+    desc.ownership = (image.ownership == HandleOwnership::Borrow)
+                         ? VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_BORROW
+                         : VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_TRANSFER;
+    if ((image.ownership != HandleOwnership::Borrow) &&
+        (image.ownership != HandleOwnership::Transfer)) {
+        // Neither rule: the import refuses it and leaves the fd alone.
+        desc.ownership = static_cast<VkVideoEncoderHandleOwnership>(image.ownership);
+    }
+    desc.colorModel = ToExtColorModel(image.colorModel);
+    return desc;
+}
+
+bool IsFdHandle(ExternalHandleType type)
+{
+    return (type == ExternalHandleType::OpaqueFd) || (type == ExternalHandleType::DmaBuf);
+}
+
 } // namespace
 
 //=============================================================================
@@ -891,7 +1003,8 @@ public:
         VkVideoEncodeInputFrame in{};
         in.sType  = VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_FRAME;
         in.pNext  = nullptr;
-        in.image  = frame.image.existingImage;
+        in.image  = IsFdHandle(frame.image.handleType) ? VK_NULL_HANDLE
+                                                       : frame.image.existingImage;
         in.format = frame.image.format;
         in.width  = frame.image.width;
         in.height = frame.image.height;
@@ -909,6 +1022,22 @@ public:
         in.signalSemaphoreCount   = static_cast<uint32_t>(signalSems.size());
         in.pSignalSemaphores      = signalSems.empty() ? nullptr : signalSems.data();
         in.pSignalSemaphoreValues = signalVals.empty() ? nullptr : signalVals.data();
+
+        if (IsFdHandle(frame.image.handleType)) {
+            if (frame.image.fd < 0) {
+                return Result(ResultCode::InvalidArgument,
+                              "an fd-backed image carries no fd");
+            }
+            const VkVideoEncoderExternalImageDescriptor desc =
+                ToImportDescriptor(frame.image);
+            VkVideoEncoderStatusCode status = VK_VIDEO_ENCODER_STATUS_SUCCESS;
+            const VkResult result = m_encoder->SubmitImportedFrame(
+                desc, static_cast<uint64_t>(frame.image.fd), in, &status);
+            if (status != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
+                return FromImportStatus(status);
+            }
+            return FromVkResult(result, "frame submission failed");
+        }
 
         const VkResult result = m_encoder->SubmitExternalFrame(in, nullptr);
         return FromVkResult(result, "frame submission failed");

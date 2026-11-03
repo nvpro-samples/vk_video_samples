@@ -75,96 +75,6 @@
 // library's private headers -- see VkEncBoundConfigProbe.
 #include "vulkan_video_encoder_ext.h"
 
-// ---------------------------------------------------------------------------
-// INTERNAL OBSERVATION STRUCTS
-//
-// What a dma-buf import produced. None of it is part of the client contract:
-// a caller encodes without naming any of these types, and the driver
-// mitigations they report are implementation choices the library is free to
-// change.
-//
-// Each carries a structure type, taken from a band of the public numbering
-// that is assigned to these and never reused. No entry point of the
-// descriptor API takes or fills one: they state what the dma-buf
-// import-ordinal guard reports, for the code that runs it.
-// ---------------------------------------------------------------------------
-
-constexpr VkVideoEncoderStructureType
-    VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_GUARD_INFO =
-        (VkVideoEncoderStructureType)0x5645001C;
-
-// ---------------------------------------------------------------------------
-// The dma-buf import-ordinal guard, and how to read its report.
-//
-// The guard mitigates a class of dma-buf import defect in which the imported
-// image is bound to memory the exported buffer's contents never reach. It
-// holds a fixed number of sacrificial imports on the device ahead of any
-// caller-visible one, so caller imports land at later live-positions. That is
-// a change of POSITION, not a repair: an import that lands damaged is still
-// damaged.
-//
-// THE GUARD IS DISABLED BY DEFAULT: a stock build retains nothing and
-// reports DISABLED for every dma-buf import inside the guard's scope. Outside
-// that scope the out-of-scope verdict is reported instead, so read |state|
-// rather than assuming DISABLED. VK_VIDEO_ENCODER_NO_IMPORT_ORDINAL_GUARD in
-// the environment disables the guard in a build that enables it.
-//
-// THE STATES. |state| is the verdict; requestedCount and retainedCount are
-// the arithmetic behind it. requestedCount is a BUILD CONSTANT, filled on
-// every path, so a reader compares against it rather than hard-coding it.
-//
-//   STATE            MEANING                        WHAT TO DO
-//   ---------------  -----------------------------  ---------------------
-//   NOT_EVALUATED    The guard did not run: a       Nothing to read. Also
-//                    VK_IMAGE registration, or      the zero value.
-//                    one refused before the
-//                    import.
-//   NOT_APPLICABLE   Out of the guard's scope:      Nothing to read.
-//                    not a DMA_BUF handle, or no
-//                    device to hold a position on.
-//   NOT_NVIDIA       Not a device the guard         Nothing to read.
-//                    applies to.
-//   DISABLED         Off deliberately: this build   Nothing to read. The
-//                    retains 0, or the kill         stock build's answer.
-//                    switch is set.
-//   COMPLETE         retainedCount ==               Caller imports land at
-//                    requestedCount, on a build     live-position
-//                    that asked for a non-zero      requestedCount + 1 or
-//                    count.                         later.
-//   INCOMPLETE       retainedCount <                Read failureStatus and
-//                    requestedCount: the shift      failureErrno; also in
-//                    asked for did not happen.      the diagnostic channel.
-// ---------------------------------------------------------------------------
-typedef enum VkVideoEncoderImportGuardState {
-    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_EVALUATED  = 0,
-    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_APPLICABLE = 1,
-    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_NVIDIA     = 2,
-    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_DISABLED       = 3,
-    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_COMPLETE       = 4,
-    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_INCOMPLETE     = 5,
-} VkVideoEncoderImportGuardState;
-
-typedef struct VkVideoEncoderImportGuardInfo {
-    VkVideoEncoderStructureType sType =
-        VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_GUARD_INFO;
-    const void*                 pNext = nullptr;  // MUST be NULL
-
-    VkVideoEncoderImportGuardState state =
-        VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_EVALUATED;          // OUT
-    // Sacrificial imports this build retains where the guard applies.
-    // A build constant, filled on every path. 0 in a stock build: the
-    // guard is disabled by default.
-    uint32_t requestedCount = 0;                                    // OUT
-    // Sacrificial imports actually live on the device right now.
-    uint32_t retainedCount  = 0;                                    // OUT
-    // INCOMPLETE only: what refused the sacrificial import.
-    // ERROR_IMPORT_FAILED with a non-zero failureErrno means dup(2)
-    // failed; any other value is the import's own status.
-    VkVideoEncoderStatusCode failureStatus =
-        VK_VIDEO_ENCODER_STATUS_SUCCESS;                            // OUT
-    int32_t failureErrno = 0;                                       // OUT
-} VkVideoEncoderImportGuardInfo;
-
 // Disposition of a public config field.
 //
 //   BOUND    -- forwarded into EncoderConfig by the binder. The binder suite
@@ -853,7 +763,7 @@ void VkEncSelectImportMemoryType(const VkEncImportMemoryTypeRequest& request,
                                  const VkPhysicalDeviceMemoryProperties& memProps,
                                  VkEncImportMemoryTypeChoice* outChoice);
 
-// The acceptance behind ModifierWouldRegister's modifier pre-check: a
+// The acceptance behind SubmitImportedFrame's creation-limit check: a
 // modifier the device cannot service must surface as the renegotiable
 // MODIFIER_UNSUPPORTED, not fall through to vkCreateImage as
 // IMPORT_FAILED. vkCreateImage's validity is defined
@@ -862,7 +772,7 @@ void VkEncSelectImportMemoryType(const VkEncImportMemoryTypeRequest& request,
 // (VUID-VkImageCreateInfo-extent-02252/-02253), mip levels
 // (-mipLevels-02255), array layers (-arrayLayers-02256) and sample count
 // (-samples-02258), with the descriptor's 0-means-default rules applied
-// exactly as ImportImageLocked applies them when it builds
+// exactly as VkEncImportExternalImage applies them when it builds
 // VkImageCreateInfo. Consuming fewer of them admits a descriptor the
 // import must then refuse.
 //
@@ -874,7 +784,7 @@ VkBool32 VkEncDescriptorWithinCreationLimits(
     const VkImageFormatProperties& limits);
 
 // ---------------------------------------------------------------------------
-// The external-image import behind registration.
+// The external-image import behind VulkanVideoEncoderExt::SubmitImportedFrame.
 //
 // Exposed here for the same reason as the memory-type policy above: the
 // fd-ownership split below is decided against DRIVER-call failures that no
@@ -925,76 +835,14 @@ struct VkEncImportedImage {
 //     cleanup vkFreeMemory. Nobody closes it again -- not this function,
 //     not any caller.
 //   * SUCCESS: the VkDeviceMemory owns it; vkFreeMemory is the release.
-// On every exit the fd is consumed from the API caller's point of view
-// (handlesConsumed stays VK_TRUE); the split only names which owner
-// performs the close, and that owner is exactly one. Win32 handles are
-// never closed here on any path, per the public header's rule.
+// On every exit the fd is consumed from the API caller's point of view; the
+// split only names which owner performs the close, and that owner is
+// exactly one. A Win32 handle is never closed here on any path.
 VkVideoEncoderStatusCode VkEncImportExternalImage(
     const VulkanDeviceContext& vkDevCtx,
     const VkVideoEncoderExternalImageDescriptor& desc,
     uint64_t osHandle,
     VkEncImportedImage* outImport);
-
-// ---------------------------------------------------------------------------
-// The dma-buf import-ordinal guard's verdict, carried from the guard (which
-// runs deep inside the import) out to the import's caller. It has no sType
-// and is not ABI.
-//
-// THREAD-LOCAL, deliberately. The guard writes it on the thread running the
-// import and the caller reads it back on that same thread, so two imports on
-// different threads cannot overwrite each other's verdict -- which a process
-// global would let them do, silently, exactly when a consumer is trying to
-// diagnose one of them.
-struct VkEncImportOrdinalGuardReport {
-    VkVideoEncoderImportGuardState state =
-        VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_EVALUATED;
-    // What this BUILD retains where the guard applies -- a constant, not an
-    // outcome, so it is filled even on the paths the guard never evaluates.
-    // 0 in a stock build, because the guard is disabled by default.
-    uint32_t requestedCount = 0;
-    uint32_t retainedCount  = 0;
-    VkVideoEncoderStatusCode failureStatus = VK_VIDEO_ENCODER_STATUS_SUCCESS;
-    int32_t  failureErrno = 0;
-};
-
-// Clear the calling thread's record and re-stamp requestedCount. A caller
-// clears it before an import, so an attempt that never reaches the import
-// reports NOT_EVALUATED rather than the previous import's answer.
-void VkEncResetImportOrdinalGuardReport();
-
-void VkEncGetImportOrdinalGuardReport(VkEncImportOrdinalGuardReport* outReport);
-
-// ---------------------------------------------------------------------------
-// Release of the dma-buf import-ordinal guard.
-//
-// The guard retains a small number of sacrificial dma-buf image imports for
-// the LIFE OF THE DEVICE, so that every caller-visible import lands that many
-// live-positions later. It is DISABLED BY DEFAULT -- the build count is 0,
-// nothing is retained, this function finds nothing and returns 0. Everything
-// below is about a build that enables it. "For the life of the device" cuts
-// both ways, and this function is the second half of it:
-//
-//   * RELEASED TOO EARLY, the shift the count was chosen for is undone, and
-//     undone SILENTLY: the freed position is handed straight to the next
-//     caller import and nothing reports it. So the only correct call site is
-//     one where no further import on |vkDevCtx| is possible at all:
-//     VulkanVideoEncoderExtImpl::Deinitialize(), after the encoder has been
-//     released and every registration retired.
-//   * NEVER RELEASED, and vkDestroyDevice runs with those VkImage and
-//     VkDeviceMemory objects still alive on the device
-//     (VUID-vkDestroyDevice-device-05137).
-//
-// RETURNS the number of guard imports actually released for |vkDevCtx|'s
-// device: 0 when the guard never ran on it (the disabled default, a device it
-// does not apply to, no dma-buf import, kill switch set, or a device that
-// never imported), and the full guard count when it did. A return value
-// rather than only a log line, because an embedder can silence the library's
-// narration.
-//
-// Idempotent and null-safe: the device's entry is taken off the registry
-// before anything is destroyed, so a second call for the same device returns 0
-// and destroys nothing, and a VK_NULL_HANDLE device returns 0.
-uint32_t VkEncReleaseImportOrdinalGuard(const VulkanDeviceContext& vkDevCtx);
 
 // ---------------------------------------------------------------------------
 // Fault-injection seam for the release-obligation guard.

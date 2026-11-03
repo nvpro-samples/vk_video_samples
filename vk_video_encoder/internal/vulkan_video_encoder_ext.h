@@ -93,8 +93,8 @@ typedef enum VkVideoEncoderStructureType {
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_ENCODE_RESULT = 0x56450003,
     // 0x56450004 is assigned and never reused.
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_CAPABILITIES  = 0x56450005,
-    // Handle exchange. 0x5645000D .. 0x56450011 remain
-    // reserved for the rest of the registry surface; never reuse.
+    // Handle exchange. 0x5645000D .. 0x56450011 are assigned and never
+    // reused.
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR = 0x56450006,
     // 0x56450007 .. 0x5645000C and 0x56450012 are assigned and never reused.
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_DEADLINE_INFO = 0x56450013,
@@ -423,8 +423,10 @@ enum VkVideoEncoderInputResidency {
 // Handle exchange
 //
 // The library imports external memory itself. A consumer describes what it
-// exported and hands over an OS handle; it does not create a VkImage, and it
-// does not need to know what the encoder's device is.
+// exported and hands over an OS handle (SubmitImportedFrame); it does not
+// create a VkImage, and it does not need to know what the encoder's device
+// is. SubmitImportedFrame takes OPAQUE_FD and DMA_BUF handles and refuses
+// every other handle type with ERROR_HANDLE_TYPE_UNSUPPORTED.
 //
 // HANDLE OWNERSHIP -- one unconditional rule:
 //
@@ -433,53 +435,42 @@ enum VkVideoEncoderInputResidency {
 //     must not close it, use it, or look at it; it is closed exactly once,
 //     and not by the caller.
 //
-//   * The library NEVER closes a Win32 handle. Not on success, not on
-//     failure. The caller retains it and must CloseHandle it once the
-//     resource is unregistered.
-//
-// The asymmetry is Vulkan's: OPAQUE_FD and DMA_BUF transfer ownership to the
-// implementation on import, NT handles do not.
-//
 // That rule is the TRANSFER mode -- the default, and what {} gives you. The
-// mode is chosen per REGISTRATION, never per call outcome; see
-// VkVideoEncoderHandleOwnership below. Both modes answer the same on every
-// exit path, and the library REPORTS which rule it applied through
-// VkVideoEncoderStatus::handlesConsumed (defined below), so a caller can
-// assert rather than guess.
+// mode is chosen per CALL, by the descriptor, never by the call's outcome;
+// see VkVideoEncoderHandleOwnership below.
 //=============================================================================
 
-// Ownership mode, set per REGISTRATION -- not per frame, and never per
-// outcome:
+// Ownership mode, set by the descriptor of each SubmitImportedFrame call --
+// never by its outcome:
 //
-//   TRANSFER: the rule above, verbatim. After the call the handle is not
-//   the caller's, on every exit path, success or failure. This is the
-//   default, and what {} gives you.
+//   TRANSFER: the rule above, verbatim. After the call the fd is not the
+//   caller's, on every exit path, success or failure, VK_NOT_READY included.
+//   This is the default, and what {} gives you.
 //
-//   BORROW: the handle stays the caller's, on every exit path, success or
+//   BORROW: the fd stays the caller's, on every exit path, success or
 //   failure. The library duplicates it before anything that can fail and
 //   applies the TRANSFER rule to its own copy. The caller closes its
 //   original whenever it likes.
 //
-// BORROW exists for a caller that must import one received handle twice -- a
-// single frame fd into both a display device and the encoder, say. It is
-// meaningless across an IPC boundary, where the transport already duplicated
-// the handle. On Win32 both modes are identical (the library never closes an
-// NT handle) and BORROW is accepted as a no-op.
+// BORROW exists for a caller that must import one received fd twice -- a
+// single frame fd into both a display device and the encoder, say -- or that
+// retries a submission refused with VK_NOT_READY. A value outside the
+// enumeration is refused and the fd is left untouched.
 typedef enum VkVideoEncoderHandleOwnership {
     VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_TRANSFER = 0,
     VK_VIDEO_ENCODER_HANDLE_OWNERSHIP_BORROW   = 1,
 } VkVideoEncoderHandleOwnership;
 
+// The values are positional and never renumbered. SubmitImportedFrame takes
+// OPAQUE_FD and DMA_BUF; it refuses NONE, OPAQUE_WIN32, D3D11_TEXTURE and
+// VK_IMAGE. An image already on the encoder's device is submitted with
+// SubmitExternalFrame instead.
 typedef enum VkVideoEncoderExternalHandleType {
     VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_NONE            = 0,
-    // POSIX: ownership transfers to the library (see above).
     VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_OPAQUE_FD       = 1,
     VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF         = 2,
-    // Win32: caller retains.
     VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_OPAQUE_WIN32    = 3,
     VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_D3D11_TEXTURE   = 4,
-    // An already-imported image on the ENCODER's own device. The
-    // same-device path; no import is performed and no handle is consumed.
     VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_VK_IMAGE        = 5,
 } VkVideoEncoderExternalHandleType;
 
@@ -502,8 +493,10 @@ typedef enum VkVideoEncoderStatusCode {
     VK_VIDEO_ENCODER_STATUS_ERROR_PLANE_LAYOUT_INVALID,
     VK_VIDEO_ENCODER_STATUS_ERROR_ALLOCATION_SIZE_INVALID,
     VK_VIDEO_ENCODER_STATUS_ERROR_MEMORY_TYPE_UNSUPPORTED,
+    // Reserved; nothing returns it.
     VK_VIDEO_ENCODER_STATUS_ERROR_CONVERSION_REQUIRED,
     VK_VIDEO_ENCODER_STATUS_ERROR_IMPORT_FAILED,
+    // Reserved; nothing returns either.
     VK_VIDEO_ENCODER_STATUS_ERROR_RESOURCE_LIMIT,
     VK_VIDEO_ENCODER_STATUS_ERROR_RESOURCE_UNKNOWN,
     VK_VIDEO_ENCODER_STATUS_ERROR_NOT_INITIALIZED,
@@ -511,37 +504,12 @@ typedef enum VkVideoEncoderStatusCode {
     // below is ABI for a consumer built against an older header.
     VK_VIDEO_ENCODER_STATUS_ERROR_SHARING_MODE_UNSUPPORTED,
     VK_VIDEO_ENCODER_STATUS_ERROR_EXTENT_INVALID,
-    // Flow control, not an error -- VkResult's VK_NOT_READY as a status:
-    // the submit path is at capacity, so drain completions and retry the
-    // same call. Distinct from ERROR_RESOURCE_LIMIT above, which retrying
-    // alone never clears.
-    //
-    // ERROR_RESOURCE_LIMIT has TWO sources. (1) A registry's 4096-slot image
-    // or semaphore table is full; an Unregister clears it. (2) A DIRECT
-    // submit was handed more waits than its eight-entry array can carry;
-    // presenting fewer waits clears that, and unregistering does nothing for
-    // it. Read the code as "this cannot succeed until the request or the
-    // registry changes" -- it does not by itself say which, and an unchanged
-    // retry succeeds in neither case.
+    // Reserved; nothing returns either. Flow control reaches a caller as the
+    // VkResult VK_NOT_READY, and the colour model of an import is the
+    // session's (see VkVideoEncoderExternalImageDescriptor::colorModel).
     VK_VIDEO_ENCODER_STATUS_NOT_READY,
-    // The colorModel DECLARATION cannot be read against the format it was
-    // declared over: RGB named over a Y'CbCr format, Y'CbCr named over an
-    // RGBA layout that carries no packed 4:4:4 reading, or a value the
-    // enumeration does not define.
-    //
-    // The offending field is colorModel, not format. NV12 declared RGB is
-    // refused under this code while NV12 itself is directly encodable, so a
-    // caller acting on the code alone corrects the declaration -- which is
-    // the only thing that can be corrected. Changing the format instead
-    // would answer a question that was never asked.
     VK_VIDEO_ENCODER_STATUS_ERROR_COLOR_MODEL_UNSUPPORTED,
 } VkVideoEncoderStatusCode;
-
-// Library-minted resource id, safe to carry across an IPC boundary. A stale
-// id -- one minted before an unregister -- is REJECTED rather than silently
-// matching a recycled slot.
-typedef uint64_t VkVideoEncoderResource;
-#define VK_VIDEO_ENCODER_RESOURCE_NULL ((VkVideoEncoderResource)0)
 
 typedef struct VkVideoEncoderPlaneLayout {
     uint64_t offset;
@@ -596,9 +564,11 @@ typedef enum VkVideoEncoderColorModel {
 //
 // Two members are not part of that payload, and are the only two that are not
 // plain data: pNext, which must be NULL and is refused otherwise, and
-// existingImage, which is read only for handleType == VK_IMAGE -- a
-// same-process arm, never an IPC one. Everything else is scalar, enum, flags,
+// existingImage, which nothing reads. Everything else is scalar, enum, flags,
 // or a fixed array of those.
+//
+// SubmitImportedFrame reads every member except existingImage, defaultLayout
+// and colorModel, which keep their places so the layout stays as pinned.
 typedef struct VkVideoEncoderExternalImageDescriptor {
     VkVideoEncoderStructureType sType =
         VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR;
@@ -615,19 +585,20 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
     uint32_t              arrayLayers;  // 0 => 1
     VkSampleCountFlagBits samples;      // 0 => VK_SAMPLE_COUNT_1_BIT
     VkImageTiling         tiling;       // OPTIMAL | LINEAR | DRM_FORMAT_MODIFIER
-    // 0 is INVALID on the OS-handle arms, not a default: the library never
-    // invents a usage the exporter did not grant. The VK_IMAGE arm alone may
-    // leave it 0, and is then accepted as transfer-source only -- see
-    // RegisterImageResource.
+    // The exporter's usage, never a default: the library never invents a
+    // usage the exporter did not grant. SubmitImportedFrame refuses, with
+    // ERROR_USAGE_INSUFFICIENT, a LINEAR image without TRANSFER_SRC and any
+    // other image with neither TRANSFER_SRC nor VIDEO_ENCODE_SRC -- 0
+    // included.
     VkImageUsageFlags     imageUsage;
     VkImageCreateFlags    imageFlags;
     VkSharingMode         sharingMode;
     // NOT mirrored: the exporter's create-time VkVideoProfileListInfoKHR. A
-    // profile-DEPENDENT exporter therefore cannot be registered faithfully.
+    // profile-DEPENDENT exporter therefore cannot be imported faithfully.
     //
     // WHICH MAKES VIDEO-PROFILE COMPATIBILITY A CALLER OBLIGATION ON THE
     // DIRECTLY ENCODABLE ARM, and one this library cannot discharge for it.
-    // A registration whose tiling is not LINEAR, whose format the library
+    // An import whose tiling is not LINEAR, whose format the library
     // encodes without conversion, and which grants
     // VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR is encoded FROM THE CALLER'S
     // OWN IMAGE, with no staging copy in between. It must therefore ALREADY
@@ -635,19 +606,19 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
     // (VUID-vkCmdEncodeVideoKHR-pEncodeInfo-08206) -- created either with a
     // VkVideoProfileListInfoKHR naming that profile in its VkImageCreateInfo
     // pNext chain, or with VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR.
-    // Registration is handed an image that already exists, so nothing done
-    // here can repair one created with neither.
+    // The import recreates the exporter's image over its memory, so nothing
+    // done here can repair one created with neither.
     //
     // PROFILE INDEPENDENCE IS NOT A BLANKET EXEMPTION. A profile-independent
     // image is compatible with a profile only while EVERY usage it declares
     // is one vkGetPhysicalDeviceVideoFormatPropertiesKHR reports for that
     // profile and format. VK_IMAGE_USAGE_STORAGE_BIT is commonly absent from
     // that set for encode-source formats, so an image carrying STORAGE may be
-    // registered for the compute filter -- which reads it through a storage
+    // imported for the compute filter -- which reads it through a storage
     // descriptor, and for which STORAGE is required -- but must not ALSO
     // declare VIDEO_ENCODE_SRC and ask to be encoded directly. A producer
     // that wants both should present the image without VIDEO_ENCODE_SRC and
-    // let the registration route through the staging copy.
+    // let the import route through the staging copy.
 
     // ---- DRM format modifier ----
     // Separate presence flag because modifier 0 is REAL -- it is
@@ -658,13 +629,13 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
 
     uint32_t                  planeCount;
     // All planes must live in the SINGLE memory object named by the handle
-    // passed to RegisterImageResource. A disjoint (multi-buffer-object) image
+    // passed to SubmitImportedFrame. A disjoint (multi-buffer-object) image
     // cannot be expressed here.
     //
-    // THIS IS A CALLER OBLIGATION, and it cannot be delegated. Registration
+    // THIS IS A CALLER OBLIGATION, and it cannot be delegated. The import
     // is handed ONE handle, so the library cannot see where the other planes
     // came from; nothing in this descriptor carries their provenance.
-    // RegisterImageResource rejects the shape that is provably impossible in
+    // SubmitImportedFrame rejects the shape that is provably impossible in
     // one allocation -- two planes at the same offset, which is what a
     // disjoint producer writes when every plane starts at the base of its own
     // buffer -- but a disjoint producer whose chroma plane sits at a non-zero
@@ -677,7 +648,7 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
     // On NVIDIA/gbm the per-plane exports of one BO return the same cached
     // dma_buf, so equal (st_dev, st_ino) is positive proof of jointness, and
     // distinct BOs never collide. A caller that cannot run that test should
-    // stage a copy instead of registering.
+    // stage a copy instead of importing.
     VkVideoEncoderPlaneLayout planeLayouts[VK_VIDEO_ENCODER_MAX_PLANES];
 
     // ---- Memory, as reported by the EXPORTER ----
@@ -706,82 +677,25 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
 
     // ---- Provenance: multi-GPU safety ----
     // A supplied deviceUUID or deviceLUID that does not match the encode
-    // device fails DEVICE_MISMATCH at registration, rather than failing the
-    // import later with an unhelpful driver error. driverUUID binds on the
-    // OPAQUE handle types, where the external-memory compatibility table
-    // requires driver identity; a dma-buf is a kernel object and a
+    // device is refused with DEVICE_MISMATCH before anything is imported,
+    // rather than failing the import later with an unhelpful driver error.
+    // A deviceLUID is compared only when both it and the device's are valid.
+    // driverUUID binds on OPAQUE_FD, where the external-memory compatibility
+    // table requires driver identity; a dma-buf is a kernel object and a
     // cross-driver import of one is legal, so a driverUUID difference there
-    // is reported rather than refused.
+    // is not refused. All-zero UUIDs state nothing and are not compared.
     uint8_t  deviceUUID[VK_UUID_SIZE];
     uint8_t  driverUUID[VK_UUID_SIZE];
     uint8_t  deviceLUID[VK_LUID_SIZE];
     VkBool32 deviceLUIDValid;
 
-    // THE LAYOUT THE LIBRARY WILL FIND THIS IMAGE IN ON THE FIRST FRAME.
-    //
-    // A STATEMENT OF FACT about the image, not a preference: it is named as
-    // the oldLayout of the FIRST acquire barrier, so a false declaration
-    // violates VUID-VkImageMemoryBarrier2-oldLayout-01197.
-    //
-    // ONE VALUE IS NOT NAMED BACK. VK_IMAGE_LAYOUT_UNDEFINED declared here
-    // is read as "the producer stated nothing", and the library substitutes
-    // a layout of its own rather than name UNDEFINED in a barrier -- an
-    // UNDEFINED oldLayout permits the implementation to discard the very
-    // pixels the producer just wrote. WHICH layout it substitutes is NOT part
-    // of this contract and differs by path. A caller that needs a known
-    // layout must declare the layout the image is really in rather than rely
-    // on the substitution. Every other layout is carried through unchanged.
-    //
-    // WHERE THE LIBRARY LEAVES THE IMAGE BETWEEN FRAMES is likewise NOT part
-    // of this contract. It differs by path, and is constrained by what a
-    // barrier may name as a destination
-    // (VUID-VkImageMemoryBarrier2-newLayout-01198), which excludes
-    // VK_IMAGE_LAYOUT_UNDEFINED and VK_IMAGE_LAYOUT_PREINITIALIZED. A caller
-    // that needs the image in a particular layout between frames must put it
-    // there itself and state it per frame, on
-    // VkVideoEncoderFrameSubmitInfo::currentLayout, rather than infer it from
-    // what was declared here.
-    //
-    // TO SEE WHAT THE LIBRARY ACTUALLY NAMED, set VKENC_DEBUG_LAYOUT in the
-    // environment and the library traces the layouts it puts in its
-    // barriers. DIAGNOSTIC ONLY, and deliberately so: it is the only way to
-    // observe the two answers this contract has just declined to specify --
-    // which layout is substituted for UNDEFINED, and where the image is
-    // left between frames -- and observing them does not turn either into a
-    // promise. Do not branch on what it reports. It writes to stderr
-    // directly, so unlike the library's other diagnostics it is NOT
-    // suppressed by silenceStdio.
-    //
-    // WHEN THIS FIELD STOPS BEING READ. On the STAGED path the library moved
-    // the image itself, so from the second frame on it names its own record
-    // instead: a declaration that was true once does not have to be kept true
-    // across frames the caller never touched the image on. TO OVERRIDE THAT
-    // RECORD ON A GIVEN FRAME -- because you moved the image yourself between
-    // submits -- set VkVideoEncoderFrameSubmitInfo::currentLayout for that
-    // frame. A non-UNDEFINED value there is an explicit per-frame statement
-    // of fact and beats the record; UNDEFINED there resolves to the record
-    // where one was kept, and to this field where it was not.
-    //
-    // THREE CASES WHERE THIS FIELD IS RE-READ EVERY FRAME, because no record
-    // exists or it is not authoritative:
-    //  * a DIRECTLY ENCODABLE registration, which is never staged;
-    //  * an image the library RELEASED to VK_QUEUE_FAMILY_FOREIGN_EXT, since a
-    //    foreign agent held it between frames and may have transitioned it,
-    //    and the release CLEARS the record rather than leave a stale one;
-    //  * the SubmitExternalFrame lane, which has no registration at all and
-    //    takes its layout from the frame.
-    //
-    // KNOWN GAP, FIRST FRAME. The library does not transition the image at
-    // registration, so this declaration must ALREADY be true when the first
-    // frame is submitted, and only the caller can make it so. An image with
-    // external memory can be created only UNDEFINED
-    // (VUID-VkImageCreateInfo-pNext-01443), so on the OS-handle tiers the
-    // image the library imports genuinely IS in UNDEFINED on frame 1,
-    // whatever is declared here -- and declaring UNDEFINED does not carry
-    // that fact through, because UNDEFINED is the one value not named back.
-    // No declaration therefore makes frame 1 truthful on those tiers; the
-    // caller's remaining lever is to transition the image into the declared
-    // layout itself before the first submit.
+    // NOT READ. The layout a frame's memory is in is the frame's
+    // VkVideoEncodeInputFrame::currentLayout, which SubmitImportedFrame takes
+    // from its |frame| argument on every call. Each call imports a new
+    // VkImage, so the library keeps no layout record between frames, and the
+    // imported image is created in VK_IMAGE_LAYOUT_UNDEFINED as an image with
+    // external memory must be (VUID-VkImageCreateInfo-pNext-01443):
+    // currentLayout states the layout the exporter left the MEMORY in.
     VkImageLayout defaultLayout;
 
 
@@ -805,43 +719,35 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
     // ALLOCATOR OR QUEUE FAMILY, never who wrote the pixels; see the enum
     // above for the two cases that make the difference.
     //
-    // AUTO (== 0, so also what a zero-initialised descriptor says) IS STILL
-    // DERIVED AS FOREIGN ON AN OS HANDLE, and only there: a caller that
-    // propagates no residency across a process boundary has told the library
-    // nothing, and a genuine import is overwhelmingly the likelier reading.
-    // On VK_IMAGE, AUTO continues to mean the layout-derived inference.
+    // AUTO (== 0, so also what a zero-initialised descriptor says) IS
+    // DERIVED AS FOREIGN: a caller that propagates no residency across a
+    // process boundary has told the library nothing, and a genuine import is
+    // overwhelmingly the likelier reading.
     //
     // GETTING IT WRONG IS NOT A PERFORMANCE NICETY, in either direction.
     // Declaring FOREIGN for a local image takes a two-sided queue-family
     // ownership transfer it does not need: an acquire FROM
     // VK_QUEUE_FAMILY_FOREIGN_EXT and, at the last use of the image, a
-    // matching release BACK to it. The release is the expensive half to get
-    // wrong -- it gives a local image away to an owner that does not exist
-    // and discards the library's residual-layout record, so the next frame
-    // acquires from a layout the image is no longer in. Declaring LOCAL for
-    // a genuinely foreign one skips an acquire the transfer needs, and the
-    // copy then reads undefined content.
+    // matching release BACK to it, which gives the memory away to an owner
+    // that does not exist. Declaring LOCAL for a genuinely foreign one skips
+    // an acquire the transfer needs, and the copy then reads undefined
+    // content.
     VkVideoEncoderInputResidency residency;
 
-    // Only for handleType == VK_IMAGE: the caller's already-imported image.
-    // Ignored for every OS-handle type, where the library performs the import
-    // and therefore knows the answer without being told.
+    // NOT READ. The library performs the import and creates the image
+    // itself; an image already on the encoder's device is submitted with
+    // SubmitExternalFrame.
     VkImage       existingImage;
 
-    // Ownership mode for the handle passed to RegisterImageResource (see
+    // Ownership mode for the handle passed to SubmitImportedFrame (see
     // VkVideoEncoderHandleOwnership). Zero-init == TRANSFER, deliberately:
     // the safe thing is what {} gives you.
     VkVideoEncoderHandleOwnership ownership;
 
-    // The colour model the samples in this image are in (see
-    // VkVideoEncoderColorModel). Zero-init reads it off |format|, which is
-    // correct for every format but the packed 4:4:4 Y'CbCr layouts.
-    //
-    // A declaration the format cannot carry is REFUSED with
-    // VK_VIDEO_ENCODER_STATUS_ERROR_COLOR_MODEL_UNSUPPORTED -- which names
-    // this field and not |format|. It is never reconciled to one of the two
-    // readings: refusing at the negotiation point is what lets the producer
-    // correct the declaration while the allocation can still change.
+    // NOT READ. An imported frame is read under the colour model the session
+    // was configured with for its format (VkVideoEncoderConfig::
+    // inputColorModel); a format the session cannot read is refused by the
+    // submit with VK_ERROR_FORMAT_NOT_SUPPORTED.
     VkVideoEncoderColorModel colorModel;
 } VkVideoEncoderExternalImageDescriptor;
 
@@ -1644,6 +1550,44 @@ public:
         const VkVideoEncodeInputFrame& frame,
         VkSemaphore* pStagingCompleteSemaphore = nullptr) = 0;
 
+    // === Imported submit: an OPAQUE_FD or DMA_BUF handle per frame ===
+    //
+    // Import |osHandle|, described by |desc|, onto the encoder's own device
+    // and submit |frame| from the imported image. desc.handleType must be
+    // OPAQUE_FD or DMA_BUF. |frame| supplies the frame id, timestamps,
+    // per-frame flags, semaphores and currentLayout; its image, format,
+    // extent and tiling are taken from |desc|, and its residency from
+    // desc.residency, where AUTO reads as FOREIGN because an OS handle names
+    // memory another allocator owns.
+    //
+    // HANDLE OWNERSHIP follows desc.ownership, on every return:
+    //   TRANSFER -- the fd is the library's from the call on. It is closed
+    //     on every refusal, VK_NOT_READY included, and on success it belongs
+    //     to the imported memory. A caller that retries after VK_NOT_READY
+    //     exports a new fd for the retry, or submits with BORROW.
+    //   BORROW -- the fd stays the caller's. The library duplicates it before
+    //     anything that can fail and applies TRANSFER to its own copy.
+    // A desc.ownership outside the enumeration is refused with the fd left
+    // open.
+    //
+    // LIFETIME: one import per call. The imported image belongs to the
+    // frame and is destroyed once the encoder has finished with the frame's
+    // input -- after the command buffers that read it have completed -- or
+    // at session teardown, whichever comes first. A caller may close its own
+    // handles, or reuse the exporting allocation for a later frame, once the
+    // frame's signal semaphores have signalled.
+    //
+    // Returns VK_SUCCESS when the frame is accepted. A refused description
+    // or a failed import returns VK_ERROR_INITIALIZATION_FAILED with the
+    // reason in |*pImportStatus|; every other result is the submit's, as
+    // SubmitExternalFrame returns it, with |*pImportStatus| SUCCESS.
+    // Threading: class (b), as SubmitExternalFrame.
+    virtual VkResult SubmitImportedFrame(
+        const VkVideoEncoderExternalImageDescriptor& desc,
+        uint64_t osHandle,
+        const VkVideoEncodeInputFrame& frame,
+        VkVideoEncoderStatusCode* pImportStatus) = 0;
+
     // === Asynchronous Bitstream Retrieval ===
     //
     // After a submit RETURNS, the GPU execution and the bitstream capture
@@ -1864,7 +1808,7 @@ public:
     // constQpP and constQpB are applied instead: a NEGATIVE member means the
     // config names no quantizer and that one is left alone, while 0 is a
     // valid (lossless) QP and is applied as one. Per-frame,
-    // VkVideoEncoderFrameSubmitInfo::qpOverride still moves the rate as well.
+    // VkVideoEncodeInputFrame::qpOverride still moves the rate as well.
     virtual VkResult Reconfigure(const VkVideoEncoderConfig& config) = 0;
 
     // === Device Access ===
