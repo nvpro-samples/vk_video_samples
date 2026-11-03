@@ -815,6 +815,54 @@ public:
     virtual void Release(uint64_t frameId) = 0;
 };
 
+// The session's completion timeline: a timeline semaphore on the session's
+// device (IDeviceBinding::Device()) that the encode queue signals as frames
+// finish encoding. A caller that already waits on Vulkan -- on the GPU, or on
+// the host with vkWaitSemaphores -- waits on it instead of polling
+// GetFrameState.
+//
+// THE VALUE. At the end of each batch of frames the GOP releases for
+// encoding, the semaphore is signalled with
+//
+//     max(frameId over every frame submitted so far) + 1
+//
+// so it never decreases, B-frame reordering included. Reaching
+// CompletionValue(frameId) means the encode of that frame, and of every frame
+// submitted before the signalling batch, has completed on the GPU. A caller
+// whose frame ids increase with submission order waits for frame N by
+// waiting for CompletionValue(N). The + 1 is there because a frame id may be
+// 0 and a timeline semaphore cannot signal its initial value.
+//
+// WHAT IT DOES NOT SAY. The bitstream is read back by a library thread once
+// the GPU is done, so GetFrameState may answer Pending, and Acquire NotReady,
+// for a short time after the value is reached. A frame the GOP still holds
+// back -- a B-frame whose following reference frame has not been submitted --
+// reaches no value until that reference is submitted, the session is
+// drained, or the stream ends.
+//
+// LIFETIME. The session creates the semaphore with itself and destroys it in
+// Finish() and when it is released; Semaphore() answers VK_NULL_HANDLE after
+// Finish(). A caller stops waiting on it before either. A semaphore imported
+// from ExportOpaqueFd() stays valid after that, and is signalled no further.
+// A session that has no timeline does not offer this role.
+class ICompletionTimeline : public IObject {
+public:
+    static constexpr std::string_view kId = "vk.video.enc.ICompletionTimeline/1";
+
+    // The value that says frame |frameId| has finished encoding.
+    static uint64_t CompletionValue(uint64_t frameId) { return frameId + 1; }
+
+    // The timeline semaphore. The session owns it: the caller waits on it
+    // and never signals or destroys it.
+    virtual VkSemaphore Semaphore() const = 0;
+
+    // The timeline as a new OPAQUE_FD, for a waiter on another device or in
+    // another process. Each call returns a new fd, which the caller owns: it
+    // closes it, or hands it to exactly one import. UnsupportedFeature when
+    // the device cannot export the semaphore, NotConfigured after Finish().
+    virtual Expected<int> ExportOpaqueFd() = 0;
+};
+
 // An encoding session: a configured encoder with frames in flight.
 //
 // The session is lifecycle only. Everything a caller does with frames is on a

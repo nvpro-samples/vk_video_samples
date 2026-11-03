@@ -1811,6 +1811,40 @@ public:
     // VkVideoEncodeInputFrame::qpOverride still moves the rate as well.
     virtual VkResult Reconfigure(const VkVideoEncoderConfig& config) = 0;
 
+    // === Completion timeline ===
+    //
+    // A timeline semaphore on the encoder's device, created by InitializeExt
+    // and destroyed by Flush() or teardown. The encode queue signals it at
+    // the end of each ordered batch of external frames -- the batch the GOP
+    // releases once its reference frame arrives -- with
+    //
+    //     value = max(frameId over every external frame submitted so far) + 1
+    //
+    // so the value never decreases under B-frame reordering, and reaching
+    // frameId + 1 means the encode of that frame, and of every frame
+    // submitted to the queue before the signalling batch, has completed on
+    // the GPU. The +1 is because a frame id may be 0 and a timeline cannot
+    // signal its initial value. With frame ids that increase in submission
+    // order, waiting for frameId + 1 waits for that frame.
+    //
+    // The bitstream of such a frame is read back by a library thread after
+    // that, so GetFrameStatus may report PENDING for a moment after the
+    // value is reached. A frame the GOP still holds back -- a B-frame whose
+    // following reference has not been submitted -- reaches no value until
+    // that reference is submitted or the stream ends.
+    //
+    // The caller waits on it and never signals or destroys it.
+    // VK_NULL_HANDLE when the session has none: before InitializeExt, after
+    // Flush(), or when creation failed. Threading: class (c).
+    virtual VkSemaphore GetCompletionTimelineSemaphore() const = 0;
+
+    // The timeline above as a new OPAQUE_FD, for a waiter on another device
+    // or in another process. The fd is the caller's, to close or to hand to
+    // exactly one import. Refused with ERROR_HANDLE_TYPE_UNSUPPORTED when the
+    // device cannot export the semaphore, and with ERROR_NOT_INITIALIZED when
+    // there is no semaphore. Threading: class (c).
+    virtual VkVideoEncoderStatusCode ExportCompletionTimelineFd(int* pFd) = 0;
+
     // === Device Access ===
 
     // Get the encoder's Vulkan device handles.

@@ -879,11 +879,13 @@ private:
 class SessionImpl final : public IEncoderSession,
                           public IFrameSubmitter,
                           public IBitstreamSource,
-                          public IDeviceBinding {
+                          public IDeviceBinding,
+                          public ICompletionTimeline {
 public:
     SessionImpl(const VkSharedBaseObj<VulkanVideoEncoderExt>& encoder,
                 const VkVideoEncoderConfig&                    config)
-        : m_encoder(encoder), m_config(config) { }
+        : m_encoder(encoder), m_config(config)
+        , m_hasCompletionTimeline(encoder->GetCompletionTimelineSemaphore() != VK_NULL_HANDLE) { }
 
     void* QueryInterface(std::string_view id) override
     {
@@ -891,6 +893,10 @@ public:
         if (id == IFrameSubmitter::kId)   return static_cast<IFrameSubmitter*>(this);
         if (id == IBitstreamSource::kId)  return static_cast<IBitstreamSource*>(this);
         if (id == IDeviceBinding::kId)    return static_cast<IDeviceBinding*>(this);
+        // Offered only by a session whose device created the semaphore.
+        if (id == ICompletionTimeline::kId && m_hasCompletionTimeline) {
+            return static_cast<ICompletionTimeline*>(this);
+        }
         return nullptr;
     }
 
@@ -1114,6 +1120,29 @@ public:
                                     outUuid);
     }
 
+    //---- ICompletionTimeline ------------------------------------------------
+
+    VkSemaphore Semaphore() const override
+    {
+        return m_encoder->GetCompletionTimelineSemaphore();
+    }
+
+    Expected<int> ExportOpaqueFd() override
+    {
+        int fd = -1;
+        switch (m_encoder->ExportCompletionTimelineFd(&fd)) {
+        case VK_VIDEO_ENCODER_STATUS_SUCCESS:
+            return fd;
+        case VK_VIDEO_ENCODER_STATUS_ERROR_HANDLE_TYPE_UNSUPPORTED:
+            return Result(ResultCode::UnsupportedFeature,
+                          "the device cannot export the timeline as an OPAQUE_FD");
+        case VK_VIDEO_ENCODER_STATUS_ERROR_NOT_INITIALIZED:
+            return Result(ResultCode::NotConfigured, "the session has no timeline");
+        default:
+            return Result(ResultCode::InternalError, "the timeline export failed");
+        }
+    }
+
 private:
     // The first field that is both stated by the caller and different from
     // what the session runs, as the literal a refusal carries -- it names the
@@ -1215,6 +1244,8 @@ private:
     // the change.
     std::mutex           m_configMutex;
     VkVideoEncoderConfig m_config;
+
+    const bool           m_hasCompletionTimeline;
 };
 
 //=============================================================================

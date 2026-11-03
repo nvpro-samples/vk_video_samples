@@ -694,6 +694,11 @@ if(BUILD_ENCODER)
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_subdirectory(vk_video_encoder/test/encoder-import-fd)
         endif()
+        # The session's completion timeline: waits under B-frame reordering,
+        # Ready after the value, and the OPAQUE_FD export.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-completion-timeline)
+        endif()
         # The device probe's skip-or-fail verdict, without a device.
         add_subdirectory(vk_video_encoder/test/encode-device-probe)
 
