@@ -350,31 +350,6 @@ public:
         return m_dpb[slot];
     }
 
-    // Return the remapped index given an external decode render target index
-    int8_t GetSlotOfPictureResource(vkPicBuffBase* pPic)
-    {
-        for (int8_t i = 0; i < (int8_t)m_dpbMaxSize; i++) {
-            if ((m_slotInUseMask & (1 << i)) && m_dpb[i].isInUse() && (pPic == m_dpb[i].getPictureResource())) {
-                return i;
-            }
-        }
-        return -1; // not found
-    }
-
-    void MapPictureResource(vkPicBuffBase* pPic, int32_t dpbSlot,
-        int32_t age = 0)
-    {
-        for (uint32_t slot = 0; slot < m_dpbMaxSize; slot++) {
-            if ((uint8_t)slot == dpbSlot) {
-                m_dpb[slot].setPictureResource(pPic, age);
-            } else if (pPic) {
-                if (m_dpb[slot].getPictureResource() == pPic) {
-                    FreeSlot(slot);
-                }
-            }
-        }
-    }
-
     uint32_t getSlotInUseMask() { return m_slotInUseMask; }
 
     uint32_t getMaxSize() { return m_dpbMaxSize; }
@@ -394,7 +369,6 @@ public:
     enum { MAX_FRM_CNT = 32 };
     enum { HEVC_MAX_DPB_SLOTS = 16 };
     enum { AVC_MAX_DPB_SLOTS = 17 };
-    enum { MAX_REMAPPED_ENTRIES = 20 };
 
     // H.264 internal DPB structure
     typedef struct dpbH264Entry {
@@ -560,58 +534,6 @@ public:
             }
         }
 
-        void setAV1PictureData(nvVideoDecodeAV1DpbSlotInfo* pDpbSlotInfo,
-            VkVideoReferenceSlotInfoKHR* pReferenceSlots,
-            uint32_t dpbEntryIdx, uint32_t dpbSlotIndex)
-        {
-            assert(dpbEntryIdx < STD_VIDEO_AV1_NUM_REF_FRAMES);
-            assert(dpbSlotIndex < STD_VIDEO_AV1_NUM_REF_FRAMES);
-            assert(isRef());
-
-            assert((dpbSlotIndex == (uint32_t)dpbSlot) || is_non_existing);
-            pReferenceSlots[dpbEntryIdx].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-            pReferenceSlots[dpbEntryIdx].slotIndex = dpbSlotIndex;
-            pReferenceSlots[dpbEntryIdx].pNext = pDpbSlotInfo[dpbEntryIdx].Init(dpbSlotIndex);
-
-            StdVideoDecodeAV1ReferenceInfo* pRefPicInfo = &pDpbSlotInfo[dpbEntryIdx].stdReferenceInfo;
-            (void)pRefPicInfo;
-#if 0
-            // Logical array - maintained by the parser.
-            // Vulkan Video parser.cpp -- maintains its own indices.
-            // We can use more indices in the parser than the spec. (Ther eis a max of 8 but we can use 16)
-            // Reason for single structure for DPB -- the array is passed in the callback (in the proxy of the processor)
-            // It checks which references are in use.
-            // 2nd Finds which DPB references were assigned before - and reuses indices.
-            // The local array maintains the
-            pRefPicInfo->flags.disable_frame_end_update_cdf = ;
-            pRefPicInfo->flags.segmentation_enabled = ;
-            pRefPicInfo->base_q_idx = ;
-            pRefPicInfo->frame_type = ;
-            pRefPicInfo->primary_ref_frame_slot_index = primary_ref_frame_slot_index;
-            pRefPicInfo->flags.used_for_long_term_reference = is_long_term;
-#endif
-
-            if (m_dumpParserData) {
-                LOG_S_INFO << "\tdpbIndex: " << dpbSlotIndex
-                          << " picOrderCntValList: " << PicOrderCnt;
-
-                LOG_S_INFO << "\t\t Flags: ";
-                LOG_S_INFO << "FRAME IS REFERENCE ";
-                //if (pRefPicInfo->flags.used_for_long_term_reference) {
-                //    std::cout << "IS LONG TERM ";
-                //}
-                LOG_S_INFO << std::endl;
-            }
-        }
-
-        void setVP9PictureData(nvVideoDecodeVP9DpbSlotInfo* pDpbSlotInfo,
-            VkVideoReferenceSlotInfoKHR* pReferenceSlots,
-            uint32_t dpbEntryIdx, uint32_t dpbSlotIndex)
-        {
-            // TODO: VP9 dpb management
-            assert(0);
-        }
-
     } dpbH264Entry;
 
     // INvVideoDecoderClient
@@ -733,14 +655,9 @@ protected:
         int32_t* pCurrAllocatedSlotIndex);
 
     int8_t AllocateDpbSlotForCurrentH264(
-        vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags,
-        int8_t presetDpbSlot);
-    int8_t AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic, bool isReference,
-                                         int8_t presetDpbSlot);
-    int8_t AllocateDpbSlotForCurrentAV1(vkPicBuffBase* pPic, bool isReference,
-                                         int8_t presetDpbSlot);
-    int8_t AllocateDpbSlotForCurrentVP9(vkPicBuffBase* pPic, bool isReference,
-                                         int8_t presetDpbSlot);
+        vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags);
+    int8_t AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic, bool isReference);
+    int8_t AllocateDpbSlotForCurrentAV1(vkPicBuffBase* pPic, bool isReference);
 
 protected:
     VkSharedBaseObj<VulkanVideoDecodeParser>    m_vkParser;
@@ -1453,7 +1370,7 @@ uint32_t VulkanVideoParser::FillDpbH264State(
     // regardless if it is going to become a reference or not. Non-reference slots
     // get freed right after usage. if (pd->ref_pic_flag) {
     int8_t currPicDpbSlot = AllocateDpbSlotForCurrentH264(GetPic(pd->pCurrPic),
-            currPicFlags, pd->current_dpb_id);
+            currPicFlags);
     assert(currPicDpbSlot >= 0);
     *pCurrAllocatedSlotIndex = currPicDpbSlot;
 
@@ -1706,7 +1623,7 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     }
 
     int8_t dpbSlot = AllocateDpbSlotForCurrentH265(GetPic(pd->pCurrPic),
-        true /* isReference */, pd->current_dpb_id);
+        true /* isReference */);
     *pCurrAllocatedSlotIndex = dpbSlot;
     assert(!(dpbSlot < 0));
     if (dpbSlot >= 0) {
@@ -1849,7 +1766,7 @@ uint32_t VulkanVideoParser::FillDpbAV1State(
     // However, the AMD fw interface appears to always need a setup slot & a destination resource,
     // so it's not clear what to properly do in that case.
     int8_t dpbSlot = AllocateDpbSlotForCurrentAV1(GetPic(pd->pCurrPic),
-        true /* isReference */, pd->current_dpb_id);
+        true /* isReference */);
 
     assert(dpbSlot >= 0);
 
@@ -2012,7 +1929,7 @@ uint32_t VulkanVideoParser::FillDpbVP9State(
     // However, the AMD fw interface appears to always need a setup slot & a destination resource,
     // so it's not clear what to properly do in that case.
     int8_t dpbSlot = AllocateDpbSlotForCurrentAV1(GetPic(pd->pCurrPic),
-        true /* isReference */, pd->current_dpb_id);
+        true /* isReference */);
 
     assert(dpbSlot >= 0);
 
@@ -2045,8 +1962,7 @@ uint32_t VulkanVideoParser::FillDpbVP9State(
 
 
 int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH264(
-    vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags,
-    int8_t /*presetDpbSlot*/)
+    vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags)
 {
     // Now, map the current render target
     int8_t dpbSlot = -1;
@@ -2068,7 +1984,7 @@ int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH264(
 }
 
 int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic,
-    bool isReference, int8_t /*presetDpbSlot*/)
+    bool isReference)
 {
     // Now, map the current render target
     int8_t dpbSlot = -1;
@@ -2089,7 +2005,7 @@ int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic,
 }
 
 int8_t VulkanVideoParser::AllocateDpbSlotForCurrentAV1(vkPicBuffBase* pPic,
-    bool isReference, int8_t /*presetDpbSlot*/)
+    bool isReference)
 {
     int8_t dpbSlot = -1;
     int8_t currPicIdx = GetPicIdx(pPic);
