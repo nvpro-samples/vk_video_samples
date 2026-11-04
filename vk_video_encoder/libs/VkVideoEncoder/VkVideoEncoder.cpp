@@ -1901,6 +1901,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
         if (encodeFrameInfo->subsampledImageResource) {
             encodeFrameInfo->subsampledImageResource->GetImageView(subsampledImageView);
+            // The filter writes the whole subsampled picture as a storage image in GENERAL; the
+            // image's previous contents are discarded. The pool hands an image out again only after
+            // the AQ library has finished reading it.
+            TransitionImageLayout(cmdBuf, subsampledImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
         }
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 
@@ -4457,7 +4461,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,  // Device-local for max GPU performance
                 nullptr,  // pVideoProfile
-                VK_IMAGE_ASPECT_PLANE_0_BIT, // Y-plane only image
+                VK_IMAGE_ASPECT_COLOR_BIT, // a single-plane image
                 false,    // useImageArray
                 false,    // useImageViewArray
                 false     // useLinear - OPTIMAL tiling for GPU performance
@@ -4822,6 +4826,15 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT_KHR |
                                     VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_GENERAL) &&
+               (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR)) {
+        // A map a compute shader wrote on another queue, on the encode queue. The submit waits
+        // for the map's semaphore at VIDEO_ENCODE, the stage named here as the first scope, so
+        // the transition follows the writes the semaphore made visible.
+        imageBarrier.srcAccessMask = 0;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) && (newLayout == VK_IMAGE_LAYOUT_GENERAL)) {
         imageBarrier.srcAccessMask = 0;
         imageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
@@ -6046,6 +6059,17 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
                               setupImageView->GetImageSubresourceRange().baseArrayLayer);
     }
 
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    // The NVIDIA AQ map library leaves the map it wrote in VK_IMAGE_LAYOUT_GENERAL; the encode
+    // reads a quantization map in VIDEO_ENCODE_QUANTIZATION_MAP_KHR.
+    if (encodeFrameInfo->aqProcessorSlot && encodeFrameInfo->srcQpMapImageResource) {
+        VkSharedBaseObj<VkImageResourceView> qpMapImageView;
+        encodeFrameInfo->srcQpMapImageResource->GetImageView(qpMapImageView);
+        TransitionImageLayout(cmdBuf, qpMapImageView, VK_IMAGE_LAYOUT_GENERAL,
+                              VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR);
+    }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
+
     vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
 
     if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
@@ -6437,6 +6461,10 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
             // Set the semaphore for the output image
             VkSemaphoreSubmitInfoKHR qpDeltaImageSem =
                     encodeFrameInfo->srcQpMapImageResource->GetSemaphoreSubmitInfo();
+            // The library sets the stage it signals at; the encode queue waits at the stage that
+            // reads the map, which is also the first scope of the map's layout transition in the
+            // encode command buffer.
+            qpDeltaImageSem.stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
             if (qpDeltaImageSem.semaphore != VK_NULL_HANDLE) {
                 assert(waitSemaphoreCount < waitSemaphoreMaxCount);
                 waitSemaphoreInfos[waitSemaphoreCount] = qpDeltaImageSem;
