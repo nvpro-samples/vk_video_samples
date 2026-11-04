@@ -854,6 +854,24 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         if (numPlanes == 0) {
             numPlanes = 1;
         }
+
+        // The compute filter binds an image's planes through GetPlaneImageView() and declares
+        // every plane binding image2DArray, which the bound view's type must match
+        // (VUID-vkCmdDispatch-viewType-07752). A multi-planar image's plane views are 2D_ARRAY
+        // views (above); a single-layer single-plane storage image, whose combined view is
+        // VK_IMAGE_VIEW_TYPE_2D, gets a 2D_ARRAY view of its one layer as its plane view.
+        if ((numViews == 1) && (imageViews[0] != VK_NULL_HANDLE) && (viewInfo.viewType == VK_IMAGE_VIEW_TYPE_2D) &&
+            ((imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0)) {
+            VkImageViewCreateInfo planeViewInfo = viewInfo;
+            planeViewInfo.pNext = nullptr;
+            planeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            VkResult result = vkDevCtx->CreateImageView(device, &planeViewInfo, nullptr, &imageViews[numViews]);
+            if (result != VK_SUCCESS) {
+                vkDevCtx->DestroyImageView(device, imageViews[0], nullptr);
+                return result;
+            }
+            numViews++;
+        }
     }
 
     imageResourceView = std::shared_ptr<VkImageResourceView>(new VkImageResourceView(vkDevCtx, imageResource,

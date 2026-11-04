@@ -347,7 +347,8 @@ public:
     uint32_t GetNumberOfPlanes() const { return m_numPlanes; }
     VkImageView GetPlaneImageView(uint32_t planeIndex = 0) const {
         if (m_numPlanes == 1) {
-            return m_imageViews[0];
+            // A single-plane image: its 2D_ARRAY plane view where Create() made one.
+            return ((m_numViews > 1) && (m_imageViews[1] != VK_NULL_HANDLE)) ? m_imageViews[1] : m_imageViews[0];
         }
         assert(planeIndex < m_numPlanes);
         return m_imageViews[planeIndex + 1];
