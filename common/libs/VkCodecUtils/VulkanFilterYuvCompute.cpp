@@ -1308,32 +1308,39 @@ static void GenWriteYCbCrBlock(std::stringstream& shaderStr,
 /**
  * @brief Generates code to compute and write subsampled Y
  *
- * Computes box filter average of NxM Y pixels and writes to binding 9.
+ * The box filter the AQ library's analysis expects: the integer mean of the NxM luma samples in
+ * the subsampled image's container, (sum + N*M/2) / (N*M), 8 bits for an 8-bit output and 16
+ * bits above, where the samples are MSB-aligned and the mean keeps the fraction bits below them.
+ * Writes binding 9.
  *
  * @param shaderStr Output stringstream
  * @param chromaHorzRatio Horizontal block size
  * @param chromaVertRatio Vertical block size
+ * @param outputBitDepth Bit depth of the output (the subsampled image is R8 or R16 after it)
  */
 static void GenComputeAndWriteSubsampledY(std::stringstream& shaderStr,
                                           uint32_t chromaHorzRatio,
-                                          uint32_t chromaVertRatio)
+                                          uint32_t chromaVertRatio,
+                                          uint32_t outputBitDepth)
 {
-    float scale = 1.0f / (chromaHorzRatio * chromaVertRatio);
+    const uint32_t count = chromaHorzRatio * chromaVertRatio;
+    const char* containerMax = (outputBitDepth > 8) ? "65535.0" : "255.0";
 
     shaderStr << "    // Compute " << chromaHorzRatio << "x" << chromaVertRatio << " box filter for subsampled Y\n"
-              << "    float subsampledY = (";
+              << "    uint subsampledSum = ";
 
     bool first = true;
     for (uint32_t y = 0; y < chromaVertRatio; y++) {
         for (uint32_t x = 0; x < chromaHorzRatio; x++) {
             if (!first) shaderStr << " + ";
-            shaderStr << "yOut" << x << y;
+            shaderStr << "uint(round(clamp(yOut" << x << y << ", 0.0, 1.0) * " << containerMax << "))";
             first = false;
         }
     }
 
     shaderStr <<
-        ") * " << scale << ";\n"
+        ";\n"
+        "    float subsampledY = float((subsampledSum + " << (count / 2) << "u) / " << count << "u) / " << containerMax << ";\n"
         "    imageStore(subsampledImageY, chromaPos, vec4(subsampledY, 0, 0, 1));\n"
         "    \n";
 }
@@ -2495,7 +2502,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     // (VkVideoEncoder.cpp). A non-4:2:0 output would size the "subsampled" Y
     // differently; that combination has no caller and is not addressed here.
     if (m_enableYSubsampling) {
-        GenComputeAndWriteSubsampledY(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio);
+        GenComputeAndWriteSubsampledY(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, outputBitDepth);
     }
 
     // Close main function
@@ -3161,9 +3168,14 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
         // For RGBA2YCBCR, we always dispatch at chroma resolution (half for 4:2:0)
         // The Y values are in ycbcr00.x, ycbcr10.x, ycbcr01.x, ycbcr11.x
         shaderStr <<
-            "    // Write 2x2 subsampled Y for Adaptive Quantization\n"
-            "    // chromaPos is at half resolution, write averaged Y\n"
-            "    float subsampledY = 0.25 * (ycbcr00.x + ycbcr10.x + ycbcr01.x + ycbcr11.x);\n"
+            "    // Write 2x2 subsampled Y for Adaptive Quantization: the integer mean in the\n"
+            "    // subsampled image's container, (sum + 2) / 4, as GenComputeAndWriteSubsampledY\n"
+            "    float subsampledMax = " << ((outputBitDepth > 8) ? "65535.0" : "255.0") << ";\n"
+            "    uint subsampledSum = uint(round(clamp(ycbcr00.x, 0.0, 1.0) * subsampledMax)) +\n"
+            "                         uint(round(clamp(ycbcr10.x, 0.0, 1.0) * subsampledMax)) +\n"
+            "                         uint(round(clamp(ycbcr01.x, 0.0, 1.0) * subsampledMax)) +\n"
+            "                         uint(round(clamp(ycbcr11.x, 0.0, 1.0) * subsampledMax));\n"
+            "    float subsampledY = float((subsampledSum + 2u) / 4u) / subsampledMax;\n"
             "    imageStore(subsampledImageY, chromaPos, vec4(subsampledY, 0, 0, 1));\n"
             "    \n";
     }
