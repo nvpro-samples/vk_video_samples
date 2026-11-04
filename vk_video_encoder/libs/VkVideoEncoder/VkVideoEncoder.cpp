@@ -4198,11 +4198,11 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         config.spatialAQStrengthNorm = m_encoderConfig->spatialAQStrength;
         config.temporalAQStrengthNorm = m_encoderConfig->temporalAQStrength;
 
-        // Input image format: nvpro encoder's VulkanFilterYuvCompute may left-shift N-bit values
-        // to fill the 16-bit R16_UNORM format when encoderConfig->input.msbShift is set.
-        // The AQ shader needs to know this shift to correctly denormalize the values.
-        // Only set inputBitShift if msbShift is enabled in the input configuration.
-        config.inputBitShift = m_encoderConfig->input.msbShift;
+        // The AQ library reads the filter's subsampled luma, which above 8 bits is MSB-aligned in
+        // 16 bits like the encode input it is made with: an LSB-aligned source is shifted up by
+        // the filter (FLAG_OUTPUT_LSB_TO_MSB_SHIFT), an MSB-aligned (P010-style) source already is.
+        // So the shift is 16 - bit depth whatever the source's msbShift.
+        config.inputBitShift = (config.bitDepth > 8) ? static_cast<int8_t>(16 - config.bitDepth) : 0;
 
         // GOP parameters
         config.gopFrameCount = m_encoderConfig->gopStructure.GetGopFrameCount();
