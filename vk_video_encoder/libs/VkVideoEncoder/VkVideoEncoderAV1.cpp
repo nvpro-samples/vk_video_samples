@@ -555,21 +555,23 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
         if (m_encoderConfig->customCdefConfig) {
             memcpy(&pFrameInfo->stdCdefInfo, &m_encoderConfig->cdefConfig, sizeof(StdVideoAV1CDEF));
         } else {
+            // The strengths each superblock chooses from, luma primary only, with damping 5: two at
+            // quality levels 0 and 1, the fastest, and four at the others.
             memset(&pFrameInfo->stdCdefInfo, 0, sizeof(StdVideoAV1CDEF));
             pFrameInfo->stdCdefInfo.cdef_damping_minus_3 = 2;
-            pFrameInfo->stdCdefInfo.cdef_bits = 2;
-            pFrameInfo->stdCdefInfo.cdef_y_pri_strength[0] = 0;
-            pFrameInfo->stdCdefInfo.cdef_y_sec_strength[0] = 0;
-            pFrameInfo->stdCdefInfo.cdef_y_pri_strength[1] = 2;
-            pFrameInfo->stdCdefInfo.cdef_y_sec_strength[1] = 0;
-            pFrameInfo->stdCdefInfo.cdef_y_pri_strength[2] = 4;
-            pFrameInfo->stdCdefInfo.cdef_y_sec_strength[2] = 0;
-            pFrameInfo->stdCdefInfo.cdef_y_pri_strength[3] = 9;
-            pFrameInfo->stdCdefInfo.cdef_y_sec_strength[4] = 0;
+            if (m_encoderConfig->qualityLevel <= 1) {
+                pFrameInfo->stdCdefInfo.cdef_bits = 1;
+                pFrameInfo->stdCdefInfo.cdef_y_pri_strength[1] = 4;
+            } else {
+                pFrameInfo->stdCdefInfo.cdef_bits = 2;
+                pFrameInfo->stdCdefInfo.cdef_y_pri_strength[1] = 2;
+                pFrameInfo->stdCdefInfo.cdef_y_pri_strength[2] = 4;
+                pFrameInfo->stdCdefInfo.cdef_y_pri_strength[3] = 9;
+            }
         }
     }
 
-    if (!AllLossless && !pStdPictureInfo->flags.allow_intrabc && m_encoderConfig->enableLr) {
+    if (!AllLossless && !pStdPictureInfo->flags.allow_intrabc && m_encoderConfig->UsesLoopRestoration()) {
         pStdPictureInfo->pLoopRestoration = &pFrameInfo->stdLrInfo;
 
         if (m_encoderConfig->customLrConfig) {

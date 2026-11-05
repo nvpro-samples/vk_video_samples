@@ -234,13 +234,18 @@ struct EncoderConfigAV1 : public EncoderConfig {
     bool                                    customLfConfig{};
     StdVideoAV1LoopFilter                   lfConfig{};
 
-    bool                                    enableCdef{};
+    // CDEF and loop restoration are on unless --cdef 0 or --lr 0 turns them off; without --lr, quality
+    // level 0, the fastest, encodes without loop restoration (UsesLoopRestoration()).
+    bool                                    enableCdef{true};
     bool                                    customCdefConfig{};
     StdVideoAV1CDEF                         cdefConfig{};
 
-    bool                                    enableLr{};
+    bool                                    enableLr{true};
+    bool                                    lrRequested{};
     bool                                    customLrConfig{};
     StdVideoAV1LoopRestoration              lrConfig{};
+
+    bool UsesLoopRestoration() const { return enableLr && (lrRequested || (qualityLevel > 0)); }
     // Sequence-header colour description, populated by InitSequenceHeader()
     // from the base-class colour fields. StdVideoAV1SequenceHeader carries
     // colour BY POINTER (pColorConfig), so the storage must outlive the
