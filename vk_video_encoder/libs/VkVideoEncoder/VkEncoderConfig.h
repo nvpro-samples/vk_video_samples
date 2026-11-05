@@ -237,12 +237,14 @@ public:
                         planeStride = 0;
                         planeHeight = 0;
                         break;
+                    // A chroma row holds a whole sample for each pair of luma samples, the
+                    // last one covering a single luma sample at an odd width.
                     case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
-                        planeStride = (planeStride + 1) / 2;
+                        planeStride = bytesPerPixel * ((width + 1) / 2);
                         planeHeight = (planeHeight + 1) / 2;
                         break;
                     case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR:
-                        planeStride = (planeStride + 1) / 2;
+                        planeStride = bytesPerPixel * ((width + 1) / 2);
                         break;
                     case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR:
                     default:
@@ -560,28 +562,32 @@ beach:
     uint32_t SetFrameGeometry(uint32_t width, uint32_t height, uint8_t bpp,
                               VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling)
     {
-        uint8_t numBytes = (uint8_t)(bpp + 7) / 8;
-        double samplingFactor = 1.5; // Default for 420
+        const uint32_t numBytes = (bpp + 7) / 8;
+        // Each chroma plane of a subsampled frame has a whole sample for each pair of luma
+        // samples, the last one covering a single luma sample at an odd width or height.
+        const uint32_t halfWidth = (width + 1) / 2;
+        const uint32_t halfHeight = (height + 1) / 2;
+        uint32_t chromaSamples = 0;
         switch (chromaSubsampling)
         {
         case VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR:
-            samplingFactor = 1.0; // Only Y component
+            chromaSamples = 0;
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
-            samplingFactor = 1.5; // Y + 1/4 U + 1/4 V = 1.5
+            chromaSamples = halfWidth * halfHeight;
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR:
-            samplingFactor = 2.0; // Y + 1/2 U + 1/2 V = 2.0
+            chromaSamples = halfWidth * height;
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR:
-            samplingFactor = 3.0; // Full Y + full U + full V = 3.0
+            chromaSamples = width * height;
             break;
         default:
             assert(!"Unknown chroma subsampling");
             break;
         }
 
-        m_frameSize = (uint32_t)(width * height * numBytes * samplingFactor);
+        m_frameSize = (width * height + 2 * chromaSamples) * numBytes;
 
         m_currFrameOffset = 0;
 
