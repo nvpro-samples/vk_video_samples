@@ -202,3 +202,10 @@ if(WIN32)
         add_subdirectory(win32_opaque_import)
     endif()
 endif()
+
+# SYNC_FD export test (Linux only): a SYNC_FD exported from a semaphore that a submission signals
+# becomes readable, on the graphics, compute, transfer, decode and encode queues, and after an
+# H.264 encode on the encode queue.
+if(UNIX AND NOT APPLE)
+    add_subdirectory(linux_sync_fd_export)
+endif()
