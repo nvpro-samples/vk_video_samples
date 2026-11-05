@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -123,7 +124,43 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
     dpbGopInfo.gopStructure = VVS_DPB_GOP_STRUCTURE_IRREGULAR;
     dpbGopInfo.gopFrameCount = m_encoderConfig->gopStructure.GetGopFrameCount();
     dpbGopInfo.consecutiveBipredictiveFrameCount = m_encoderConfig->gopStructure.GetConsecutiveBFrameCount();
-    const VvsDpbAV1SequenceInfo dpbSequenceInfo{&m_stateAV1.m_sequenceHeader, &m_encoderConfig->av1EncodeCapabilities,
+    // The DPB references within the counts the device prefers at the session's quality level, as the
+    // H.265 encoder takes its preferred L0 and L1 counts: each prediction mode's reference count, group
+    // counts and names are the capability's, within a nonzero preference.
+    VkVideoEncodeAV1CapabilitiesKHR referenceLimits = m_encoderConfig->av1EncodeCapabilities;
+    const VkVideoEncodeAV1QualityLevelPropertiesKHR& preferred = m_encoderConfig->av1QualityLevelProperties;
+    auto prefer = [](uint32_t& limit, uint32_t preference) {
+        if (preference != 0) {
+            limit = std::min(limit, preference);
+        }
+    };
+    auto preferNames = [](uint32_t& names, uint32_t preference) {
+        if ((names & preference) != 0) {
+            names &= preference;
+        }
+    };
+    prefer(referenceLimits.maxSingleReferenceCount, preferred.preferredMaxSingleReferenceCount);
+    preferNames(referenceLimits.singleReferenceNameMask, preferred.preferredSingleReferenceNameMask);
+    prefer(referenceLimits.maxUnidirectionalCompoundReferenceCount, preferred.preferredMaxUnidirectionalCompoundReferenceCount);
+    prefer(referenceLimits.maxUnidirectionalCompoundGroup1ReferenceCount,
+           preferred.preferredMaxUnidirectionalCompoundGroup1ReferenceCount);
+    preferNames(referenceLimits.unidirectionalCompoundReferenceNameMask,
+                preferred.preferredUnidirectionalCompoundReferenceNameMask);
+    prefer(referenceLimits.maxBidirectionalCompoundReferenceCount, preferred.preferredMaxBidirectionalCompoundReferenceCount);
+    prefer(referenceLimits.maxBidirectionalCompoundGroup1ReferenceCount,
+           preferred.preferredMaxBidirectionalCompoundGroup1ReferenceCount);
+    prefer(referenceLimits.maxBidirectionalCompoundGroup2ReferenceCount,
+           preferred.preferredMaxBidirectionalCompoundGroup2ReferenceCount);
+    preferNames(referenceLimits.bidirectionalCompoundReferenceNameMask, preferred.preferredBidirectionalCompoundReferenceNameMask);
+    if (m_encoderConfig->verbose) {
+        LOG_S_INFO << "AV1 references at quality level " << m_encoderConfig->qualityLevel << ": single "
+                   << referenceLimits.maxSingleReferenceCount << ", unidirectional compound "
+                   << referenceLimits.maxUnidirectionalCompoundReferenceCount << ", bidirectional compound "
+                   << referenceLimits.maxBidirectionalCompoundReferenceCount << " ("
+                   << referenceLimits.maxBidirectionalCompoundGroup1ReferenceCount << " past, "
+                   << referenceLimits.maxBidirectionalCompoundGroup2ReferenceCount << " future)" << std::endl;
+    }
+    const VvsDpbAV1SequenceInfo dpbSequenceInfo{&m_stateAV1.m_sequenceHeader, &referenceLimits,
                                                 m_encoderConfig->enableIntraRefresh ? &m_encoderConfig->intraRefreshCapabilities : nullptr,
                                                 &dpbGopInfo};
     result = m_dpb.Sequence(dpbSequenceInfo, nullptr);
