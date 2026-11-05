@@ -117,7 +117,9 @@ int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])
         } else if (args[i] == "--cdef"){
             enableCdef = true;
 
-            if (((i + 1) < argc) && (args[i + 1] == "--params")) {
+            if (((i + 1) < argc) && ((args[i + 1] == "0") || (args[i + 1] == "1"))) {
+                enableCdef = (args[++i] == "1");
+            } else if (((i + 1) < argc) && (args[i + 1] == "--params")) {
                 ++i;
                 customCdefConfig = true;
                 // parse CDEF params
@@ -132,10 +134,13 @@ int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])
             }
         } else if (args[i] == "--lr"){
             enableLr = true;
+            lrRequested = true;
 
-            // [ --params <type[0]> <...> <size[0]> <...> ]
+            // [ 0 | 1 | --params <type[0]> <...> <size[0]> <...> ]
             // Eg: --lr --params 2 2 2   1 1 1
-            if (((i + 1) < argc) && (args[i + 1] == "--params")) {
+            if (((i + 1) < argc) && ((args[i + 1] == "0") || (args[i + 1] == "1"))) {
+                enableLr = (args[++i] == "1");
+            } else if (((i + 1) < argc) && (args[i + 1] == "--params")) {
                 ++i;
                 customLrConfig = true;
                 // parse LR params
@@ -187,7 +192,7 @@ bool EncoderConfigAV1::InitSequenceHeader(StdVideoAV1SequenceHeader *seqHdr,
     seqHdr->flags.enable_order_hint = 1;
     seqHdr->order_hint_bits_minus_1 = ORDER_HINT_BITS - 1;
     seqHdr->flags.enable_cdef = enableCdef ? 1 : 0;
-    seqHdr->flags.enable_restoration = enableLr ? 1 : 0;
+    seqHdr->flags.enable_restoration = UsesLoopRestoration() ? 1 : 0;
 
     // A1 colour wiring, AV1 arm: emit the sequence header's color_config --
     // AV1's counterpart of the H.26x VUI colour description. AV1 uses the

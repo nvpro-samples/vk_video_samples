@@ -357,17 +357,19 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                             3. \"--lf --params 10 11 12 13   5  0\"\n\
                                             4. \"--lf --params  0  0         5  0\"\n\
                                             5. \"--lf\"\n\n\
-        --cdef                          Enable CDEF configuration\n\
-        --params                        Enabel custom CDEF configuration when followed by --cdef option\n\
-                                        Otherwise default CDEF configuration will be used\n\
+        --cdef                          [0|1] CDEF, on by default; 0 turns it off\n\
+        --params                        Enable custom CDEF configuration when followed by --cdef option\n\
+                                        Otherwise the default CDEF configuration is used: luma primary\n\
+                                        strengths 0 and 4 at quality levels 0 and 1, 0, 2, 4 and 9 at the others\n\
                                         Following CDEF parameters must be followed in order with this option\n\
                                         <damping_minus_3> <bits> <y_pri[0]> <y_sec[0]> <uv_pri[0]> <uv_sec[0]> ...\n\
                                         Eg: 1. \"--cdef --params 3  2  1 2 9 1   2 3 7 3   3 1 4 2   4 0 3 2\"\n\
                                             2. \"--cdef --params 3  0  1 2 9 1\"\n\
                                             3. \"--cdef\"\n\
-        --lr                            Enable loop restoration filter\n\
-        --params                        Enabel custom loop restoration filter configuration when followed by --lr option\n\
-                                        Otherwise default loop restoration filter configuration will be used\n\
+        --lr                            [0|1] Loop restoration filter, on by default except at quality\n\
+                                        level 0; 0 turns it off, --lr or 1 turns it on at every level\n\
+        --params                        Enable custom loop restoration filter configuration when followed by --lr option\n\
+                                        Otherwise the default loop restoration filter configuration is used\n\
                                         Following loop restoration parameters must be followed in order with this option\n\
                                         <type[0]> <type[1]> <type[2]> <size[0]> <size[1]> <size[2]>\n\
                                         Eg: 1. \"--lr --params 2 2 2   1 1 1\"\n\
