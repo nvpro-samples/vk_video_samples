@@ -865,7 +865,9 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     pps->flags.sign_data_hiding_enabled_flag = 0;
     pps->flags.cabac_init_present_flag = 1;
     pps->flags.constrained_intra_pred_flag = 0;
-    pps->flags.transform_skip_enabled_flag = 1; // TODO: if (m_stHEVCEncInitParams.iBitDepthLuma == 10 && m_stHEVCEncInitParams.iBitDepthChroma==10 && (m_devCaps & NVVID_DEVCAPS_NVENC_PASCAL_OR_LATER)) m_stHEVCEncInitParams.bTransformSkipEnabledFlag = false;
+    // Transform skip codes a block's residual without a transform, which pays off on sharp synthetic
+    // content. It is off for 10-bit pictures, where it costs more than it saves.
+    pps->flags.transform_skip_enabled_flag = ((encodeBitDepthLuma == 10) && (encodeBitDepthChroma == 10)) ? 0 : 1;
     pps->flags.cu_qp_delta_enabled_flag = 1;
     pps->flags.pps_slice_chroma_qp_offsets_present_flag = 0;
     pps->flags.weighted_pred_flag = 0;
