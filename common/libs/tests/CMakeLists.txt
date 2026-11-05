@@ -209,3 +209,10 @@ endif()
 if(UNIX AND NOT APPLE)
     add_subdirectory(linux_sync_fd_export)
 endif()
+
+# Win32 semaphore interop test (Windows only): a semaphore shared through a Win32 handle carries
+# signals in both directions between the graphics, compute, transfer, decode and encode queues and a
+# second device, also after an H.264 encode on the encode queue.
+if(WIN32)
+    add_subdirectory(win32_semaphore_interop)
+endif()
