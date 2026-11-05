@@ -38,6 +38,7 @@ VK_USE_PLATFORM_WIN32_KHR."
 #include <chrono>
 #include <cstdlib>
 #include <deque>
+#include <memory>
 #include <unordered_set>
 #include <vector>
 
@@ -3366,6 +3367,14 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrameCommon(
         return VK_NOT_READY; // Pool is full, try again later
     }
 
+    // This call's own record of the frame's staging copy. The call below
+    // hands the frame to the assembly workers before it returns, and a worker
+    // that completes it resets the node, so after the call the node's command
+    // buffers are no evidence either way: only this record is.
+    const std::shared_ptr<VkVideoEncoder::InputSubmitRecord> inputSubmitRecord =
+        std::make_shared<VkVideoEncoder::InputSubmitRecord>();
+    encodeFrameInfo->inputSubmitRecord = inputSubmitRecord;
+
     // No wait-stage masks are fabricated here. VkVideoEncodeInputFrame
     // carries none, and the right mask depends on which submission consumes
     // the wait, which only the encoder core knows: TRANSFER where the waits
@@ -3435,18 +3444,15 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrameCommon(
         // uses this to chain the display blit after the encode, then
         // signals the release semaphore from the display submit.
         //
-        // Path A (direct encode): encodeCmdBuffer's semaphore, signaled
-        //   after vkCmdEncodeVideoKHR reads the input.
-        // Path B/C (staging): inputCmdBuffer's semaphore, signaled
-        //   after the staging copy reads the input.
+        // Paths B/C (staging): the staging copy's semaphore, recorded when
+        //   its submit was accepted.
+        // Path A (direct encode): VK_NULL_HANDLE; the caller's signal
+        //   semaphores (inputSignalSemaphores) carry the synchronization.
         if (pStagingCompleteSemaphore) {
-            if (encodeFrameInfo->inputCmdBuffer) {
-                // Paths B/C: staging copy was done, signal from inputCmdBuffer
-                *pStagingCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
-            } else {
-                // Path A: no staging, sync is via inputSignalSemaphores (timeline)
-                *pStagingCompleteSemaphore = VK_NULL_HANDLE;
-            }
+            *pStagingCompleteSemaphore =
+                inputSubmitRecord->issued.load(std::memory_order_acquire)
+                    ? inputSubmitRecord->stagingCompleteSemaphore
+                    : VK_NULL_HANDLE;
         }
 
         // Finish the admission the reservation opened: what the submit adds

@@ -21,6 +21,7 @@
 #include <deque>
 #include <thread>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
@@ -148,6 +149,21 @@ public:
     static_assert(SYNC_PROCESSING_STATE_COUNT <= (1ULL << SEM_SYNC_TYPE_IDX_SHIFT),
                   "AQ_SYNC_STATE_COUNT must be <= 1 << SEM_SYNC_TYPE_IDX_SHIFT");
 
+    // What the caller of a SetExternalInputFrame* call needs to know, after the call returns, about that
+    // frame's staging copy: whether vkQueueSubmit accepted it, and the semaphore it signals once it has read
+    // the caller's input image.
+    //
+    // The command-buffer nodes of the frame cannot tell it. The call queues the frame for assembly before it
+    // returns, and from then on an assembly worker can complete the frame and Reset() its node, clearing
+    // inputCmdBuffer while the caller reads it. The caller creates this record, hands the frame a reference
+    // and keeps its own; the staging submit writes stagingCompleteSemaphore first and then sets issued with
+    // release ordering, so a caller that reads issued == true with acquire ordering also sees the semaphore.
+    // A direct encode has no staging copy and leaves the record unset.
+    struct InputSubmitRecord {
+        std::atomic<bool> issued{false};
+        VkSemaphore       stagingCompleteSemaphore = VK_NULL_HANDLE;
+    };
+
     struct VkVideoEncodeFrameInfo : public VkVideoRefCountBase
     {
         inline VkVideoCodecOperationFlagBitsKHR GetType() const {
@@ -263,6 +279,9 @@ public:
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> inputCmdBuffer;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> encodeCmdBuffer;
         VkSharedBaseObj<VkVideoEncodeFrameInfo>            dependantFrames;
+        /** Filled when vkQueueSubmit accepts this frame's staging copy. The caller keeps its own reference
+         *  (see InputSubmitRecord); Reset() drops only this node's. */
+        std::shared_ptr<InputSubmitRecord>                 inputSubmitRecord;
 
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapImageResource;
@@ -623,6 +642,7 @@ public:
                 inputCmdBuffer = nullptr;
                 qpMapCmdBuffer = nullptr;
                 encodeCmdBuffer = nullptr;
+                inputSubmitRecord = nullptr;
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
                 aqProcessorSlot = nullptr;
 #endif // NV_AQ_GPU_LIB_SUPPORTED

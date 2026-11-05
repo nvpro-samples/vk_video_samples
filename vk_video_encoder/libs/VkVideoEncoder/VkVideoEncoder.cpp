@@ -2422,14 +2422,19 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
                                                            m_encodeEncodeFrameNum,
                                                            m_encodeInputFrameNum);
 
-    // Only a submit the driver ACCEPTED puts this node in flight. Marking a
-    // rejected batch submitted tells the release-fence export that a signal
-    // operation is pending execution when none was ever queued, and leaves
-    // the node claiming a fence that will never be signalled. Rejected
-    // commands stay Recorded, which is what they are, and reset/reuse
-    // proceeds from there.
+    // Only a submit the driver ACCEPTED puts this node in flight, and only
+    // then does the caller's record name its semaphore. A rejected batch
+    // queues no signal: a caller that waited on its semaphore would wait
+    // forever, and a node marked submitted would claim a fence that is never
+    // signalled. Rejected commands stay Recorded, which is what they are,
+    // and reset/reuse proceeds from there.
     if (result == VK_SUCCESS) {
         encodeFrameInfo->inputCmdBuffer->SetCommandBufferSubmitted();
+        if (encodeFrameInfo->inputSubmitRecord) {
+            encodeFrameInfo->inputSubmitRecord->stagingCompleteSemaphore =
+                encodeFrameInfo->inputCmdBuffer->GetSemaphore();
+            encodeFrameInfo->inputSubmitRecord->issued.store(true, std::memory_order_release);
+        }
     }
     bool syncCpuAfterStaging = false;
     if (syncCpuAfterStaging) {
