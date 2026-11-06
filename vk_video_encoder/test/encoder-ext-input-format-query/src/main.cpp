@@ -38,7 +38,9 @@
  * publishable (codec, profile) key, puts each advertised entry back through
  * the point query, and asserts equality of encodeFormat and optimality -- with
  * the OPTIMAL arm as its calibration and a refusal control that keeps
- * "accurate" distinguishable from "permissive".
+ * "accurate" distinguishable from "permissive". No list carries a SUBOPTIMAL
+ * entry: a format that needs the compute filter is not an input a submitted
+ * frame can be, and both surfaces refuse it.
  *
  * --init-gate IS A THIRD MODE AND A THIRD ROW, and it asserts the proposition
  * neither of the other two can: that what InitializeExt ACCEPTS is what the
@@ -467,6 +469,9 @@ int RunCrossRoute(VulkanVideoEncoderContext* ctx, uint32_t deviceIndex)
           "at least two publishable keys advertise a list, so the sweep has "
           "something to read",
           "answeredKeys=" + U32(answeredKeys));
+    Check(suboptimalRows == 0u,
+          "no list advertises a format that needs the compute filter",
+          U32(suboptimalRows) + " SUBOPTIMAL rows");
 
     // ---- The two-call idiom's stability, which is now a DIFFERENT claim ----
     //
@@ -618,9 +623,8 @@ int RunCrossRoute(VulkanVideoEncoderContext* ctx, uint32_t deviceIndex)
         return 1;
     }
 
-    // ---- THE ASSERTION. The SUBOPTIMAL arm, where the enumerator computes
-    // ---- encodeFormat from the DEVICE's list and the point query computes it
-    // ---- from the SESSION's own bound configuration.
+    // ---- The SUBOPTIMAL arm. Empty by the check above; walked so that an
+    // ---- entry reaching it is still held to cross-route equality.
     std::printf("-- cross-route equality on the SUBOPTIMAL arm --\n");
     for (size_t k = 0; k < kPublishableKeyCount; k++) {
         for (uint32_t i = 0; i < lists[k].count; i++) {
@@ -759,11 +763,13 @@ const size_t kInitGateKeyCount =
     sizeof(kInitGateKeys) / sizeof(kInitGateKeys[0]);
 
 // What the DEVICE refuses, on both measured architectures, at every profile:
-// the 4:2:2 family and the 12-bit family. These are exactly the formats the
-// library ROUTES -- the taxonomy admits them and the binder builds a config for
-// them -- and that the device then will not encode. They are on no advertised
-// list, which --cross-route's control 2 already asserts for two of them; what
-// is asserted here is that InitializeExt agrees.
+// the 4:2:2 family and the 12-bit family, in the formats the encoder reads
+// directly. These are formats the library ROUTES -- the taxonomy admits them
+// and the binder builds a config for them -- and that the device then will not
+// encode. They are on no advertised list, which --cross-route's control 2
+// already asserts for two of them; what is asserted here is that
+// InitializeExt agrees. The three-plane spellings are not rows here: they
+// need the compute filter, so the point query refuses them on any device.
 struct RefusalRow {
     VkFormat    format;
     const char* name;
@@ -772,14 +778,10 @@ struct RefusalRow {
 const RefusalRow kMustRefuse[] = {
     { VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,                    "NV16",
       "8-bit 4:2:2, semi-planar" },
-    { VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM,                   "I422",
-      "8-bit 4:2:2, 3-plane, converted rung" },
     { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16,   "P210",
       "10-bit 4:2:2, semi-planar" },
     { VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,   "P012",
       "12-bit 4:2:0, semi-planar" },
-    { VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16,  "I420-12",
-      "12-bit 4:2:0, 3-plane, converted rung" },
     { VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16,   "S412",
       "12-bit 4:4:4, semi-planar" },
 };
@@ -838,7 +840,7 @@ int RunInitGate(VulkanVideoEncoderContext* ctx, uint32_t deviceIndex)
         }
     }
     std::printf("  %u advertised entries put through InitializeExt\n", swept);
-    Check(swept >= 10u,
+    Check(swept >= 3u,
           "the negative control swept a list worth reading",
           "only " + U32(swept) + " entries");
     if (g_failures != 0) {
@@ -1125,6 +1127,18 @@ int main(int argc, char** argv)
           VK_ERROR_FORMAT_NOT_SUPPORTED, VK_FORMAT_UNDEFINED,
           VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL,
           "Main (1) is a 4:2:0 profile and cannot carry 4:4:4" },
+        // Formats only the compute filter could convert: no submitted frame
+        // runs through the filter, so the query refuses them on any device.
+        { kH264, "H.264", VK_VIDEO_ENCODER_PROFILE_DEFAULT,
+          VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM, "I420",
+          VK_ERROR_FORMAT_NOT_SUPPORTED, VK_FORMAT_UNDEFINED,
+          VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL,
+          "three-plane 4:2:0 needs the compute filter" },
+        { kH264, "H.264", VK_VIDEO_ENCODER_PROFILE_DEFAULT,
+          VK_FORMAT_R8G8B8A8_UNORM, "RGBA8",
+          VK_ERROR_FORMAT_NOT_SUPPORTED, VK_FORMAT_UNDEFINED,
+          VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL,
+          "RGBA needs the compute filter" },
         // EXPRESSIBLE, DERIVABLE, AND NOW BINDABLE. 244 is the profile the
         // DEFAULT derivation reaches for this very input and this device
         // encodes it, so naming it explicitly must not be refused. This query

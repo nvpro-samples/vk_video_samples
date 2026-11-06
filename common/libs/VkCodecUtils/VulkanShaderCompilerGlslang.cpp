@@ -20,7 +20,6 @@
 // dependency without changing what compiles the shaders.
 
 #include <iostream>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <mutex>
 
 // The SPIRV headers are included WITHOUT a glslang/ prefix on purpose. An
@@ -37,6 +36,7 @@
 #include <SPIRV/Logger.h>
 
 #include "VkCodecUtils/VulkanShaderCompilerBackend.h"
+#include "Logger.h"
 
 namespace {
 
@@ -58,7 +58,7 @@ EShLanguage getGlslangShaderStage(VkShaderStageFlagBits type)
     case VK_SHADER_STAGE_COMPUTE_BIT:
         return EShLangCompute;
     default:
-        VkEncErr() << "VulkanShaderCompiler: invalid VkShaderStageFlagBits type = "
+        LOG_S_ERROR << "VulkanShaderCompiler: invalid VkShaderStageFlagBits type = "
                   << type << std::endl;
     }
     return EShLangCount;
@@ -113,7 +113,7 @@ public:
         if (!shader.parse(GetDefaultResources(), 450, ENoProfile,
                           false /* forceDefaultVersionAndProfile */,
                           false /* forwardCompatible */, messages)) {
-            VkEncErr() << "Compilation error: \n"
+            LOG_S_ERROR << "Compilation error: \n"
                       << shader.getInfoLog() << "\n"
                       << shader.getInfoDebugLog() << std::endl;
             return false;
@@ -122,7 +122,7 @@ public:
         glslang::TProgram program;
         program.addShader(&shader);
         if (!program.link(messages)) {
-            VkEncErr() << "Link error: \n" << program.getInfoLog() << std::endl;
+            LOG_S_ERROR << "Link error: \n" << program.getInfoLog() << std::endl;
             return false;
         }
 
@@ -138,11 +138,11 @@ public:
 
         const std::string spvMessages = logger.getAllMessages();
         if (!spvMessages.empty()) {
-            VkEncErr() << "SPIR-V generation: " << spvMessages << std::endl;
+            LOG_S_WARN << "SPIR-V generation: " << spvMessages << std::endl;
         }
 
         if (spirv.empty()) {
-            VkEncErr() << "SPIR-V generation produced no code" << std::endl;
+            LOG_S_ERROR << "SPIR-V generation produced no code" << std::endl;
             return false;
         }
 
@@ -160,7 +160,7 @@ VulkanShaderCompilerBackend* VulkanShaderCompilerBackend::Create()
 {
     // Process-global; must be balanced by FinalizeProcess() in Destroy().
     if (!glslang::InitializeProcess()) {
-        VkEncErr() << "VulkanShaderCompiler: glslang::InitializeProcess() failed!" << std::endl;
+        LOG_S_ERROR << "VulkanShaderCompiler: glslang::InitializeProcess() failed!" << std::endl;
         return nullptr;
     }
 

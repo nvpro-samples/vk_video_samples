@@ -10,8 +10,16 @@ These presets are intended to match the NVENC preset+tuning model used by:
 Use this README to choose the right preset for your workload and understand what each file is optimizing for.
 
 Current driver note:
-- `qualityPreset` values `5` (P6) and `6` (P7) are not supported yet.
-- Maximum supported `qualityPreset` is currently `4` (P5).
+- A device states its quality levels per video profile, and the count depends on the codec and the tuning
+  mode. For example, an RTX 4080 states these:
+
+  | Codec | Five levels, `0` to `4` (P1 to P5) | Seven levels, `0` to `6` (P1 to P7) |
+  |---|---|---|
+  | H.264 | high quality, lossless | low latency, ultra-low latency |
+  | H.265 | low latency, ultra-low latency | high quality, lossless |
+  | AV1 | none | high quality, low latency, ultra-low latency |
+- The encoder refuses a level the device does not state as not supported (exit status 69). Every preset in
+  this directory is H.264, so `high_quality_p6.json` and `high_quality_p7.json` are refused.
 
 ## 1. Quick Start
 
@@ -55,9 +63,9 @@ NVIDIA P presets are **zero-based** in the current Vulkan/NVENC stack:
 
 `P1` is fastest / lowest quality. `P7` is slowest / highest quality.
 
-Driver support status (current):
-- Supported now: `qualityPreset 0..4` (P1..P5)
-- Not supported yet: `qualityPreset 5..6` (P6..P7)
+Driver support status (current), for the H.264 presets in this directory:
+- High-quality and lossless tuning: `qualityPreset 0..4` (P1..P5); `5..6` (P6..P7) are refused as not supported
+- Low-latency and ultra-low-latency tuning: `qualityPreset 0..6` (P1..P7)
 
 ## 4. Files in This Directory
 

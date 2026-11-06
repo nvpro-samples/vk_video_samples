@@ -25,6 +25,7 @@
 
 #include "VkCodecUtils/Helpers.h"
 #include "ShellDirect.h"
+#include "Logger.h"
 
 static const std::vector<VkExtensionProperties> directSurfaceExtensions {
     VkExtensionProperties{ VK_KHR_DISPLAY_EXTENSION_NAME, VK_KHR_DISPLAY_SPEC_VERSION },
@@ -72,12 +73,12 @@ void ShellDirect::RunLoop()
 
         if (counter == 0) {
             // Waiting for the display to wake-up
-            std::cout << "Waiting for the display to wake-up for " << waitForDisplayPowerOnSec << " seconds: " << std::flush;
+            LOG_S_INFO << "Waiting for the display to wake-up for " << waitForDisplayPowerOnSec << " seconds: " << std::flush;
             for (uint32_t waitForDisplay = 0; waitForDisplay < waitForDisplayPowerOnSec; waitForDisplay++) {
-                std::cout << waitForDisplay << " " << std::flush;
+                LOG_S_INFO << waitForDisplay << " " << std::flush;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
-            std::cout << std::endl << "Done Waiting for the display" << std::endl;
+            LOG_S_INFO << std::endl << "Done Waiting for the display" << std::endl;
         }
 
         counter++;
@@ -100,7 +101,7 @@ void ShellDirect::InitDisplay()
 
     const uint32_t displayIndex = 0;
     m_vkDisplay = displayProps[displayIndex].display;
-    printf("using display index %u ('%s')\n", displayIndex, displayProps[displayIndex].displayName);
+    LOG_INFO("using display index %u ('%s')\n", displayIndex, displayProps[displayIndex].displayName);
 
     // Display dpy = NULL;
     // Provided by VK_EXT_acquire_xlib_display
@@ -163,7 +164,7 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance)
     }
 
     if (foundPlaneIndex == planeProperties.size()) {
-        printf("No plane found compatible with the display. Ooops.");
+        LOG_INFO("No plane found compatible with the display. Ooops.");
         assert(false);
     }
 
@@ -186,7 +187,7 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance)
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     AssertSuccess(m_ctx.devCtx->CreateDisplayPlaneSurfaceKHR(m_ctx.devCtx->getInstance(), &surfaceCreateInfo, nullptr, &surface));
 
-    printf("Created display surface.\n"
+    LOG_INFO("Created display surface.\n"
            "display res: %ux%u\n", surfaceExtent.width, surfaceExtent.height);
     m_displayWidth = surfaceExtent.width;
     m_displayHeight = surfaceExtent.height;

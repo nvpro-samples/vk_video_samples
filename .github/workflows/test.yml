@@ -62,6 +62,57 @@ jobs:
           fi
           ./scripts/check_code_format.sh "$base"
 
+  # The encoder's DPB library, vkvideo-dpb (common/libs/VkVideoDpb), as C only: ISO C99 with gcc and
+  # clang, warnings as errors, also under the sanitizers, and with MSVC compiling it as C (/TC). The
+  # other jobs build it beside the C++ tree, where a C++-only construct in its headers or sources would
+  # pass unseen. scripts/check_dpb_library_c.sh fetches the Vulkan-Headers tag the build pins.
+  dpb-library-c:
+    name: DPB library as C (${{ matrix.compiler }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            os: ubuntu-24.04
+          - compiler: clang
+            os: ubuntu-24.04
+          - compiler: msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and test as C99
+        if: matrix.compiler != 'msvc'
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          ./scripts/check_dpb_library_c.sh BUILD_DPB_C
+          SANITIZE=1 VULKAN_HEADERS_DIR=$(ls -d "$PWD"/BUILD_DPB_C/Vulkan-Headers-*) \
+            ./scripts/check_dpb_library_c.sh BUILD_DPB_C_SANITIZE
+
+      # MSVC has no C99 switch: /TC compiles the sources as C, /std:c11 to the C standard the library's
+      # C99 is a subset of.
+      - name: Build and test as C with MSVC
+        if: matrix.compiler == 'msvc'
+        shell: pwsh
+        run: |
+          $tag = (Select-String -Path cmake/FindVulkanAndDependencies.cmake -Pattern '^\s*GIT_TAG (v[0-9.]+)$' |
+                  Select-Object -First 1).Matches[0].Groups[1].Value
+          git -c advice.detachedHead=false clone --quiet --depth 1 --branch $tag https://github.com/KhronosGroup/Vulkan-Headers.git BUILD_DPB_C/Vulkan-Headers
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+                  -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $sources = (Get-ChildItem common/libs/VkVideoDpb/src/*.c).FullName + (Resolve-Path common/libs/VkVideoDpb/tests/vvs_dpb_test.c).Path
+          $cl = "cl /nologo /TC /std:c11 /W4 /WX /Icommon/libs/VkVideoDpb/include /IBUILD_DPB_C/Vulkan-Headers/include " +
+                "/FoBUILD_DPB_C/ /FeBUILD_DPB_C/vkvideo-dpb-test-c.exe " + ($sources -join ' ')
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && $cl"
+          if ($LASTEXITCODE -ne 0) { throw "MSVC build failed" }
+          ./BUILD_DPB_C/vkvideo-dpb-test-c.exe
+          if ($LASTEXITCODE -ne 0) { throw "vkvideo-dpb-test failed" }
+
   unit-tests:
     name: Unit Tests
     needs: lint

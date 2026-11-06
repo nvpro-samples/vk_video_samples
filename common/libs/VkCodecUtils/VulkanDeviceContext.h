@@ -20,7 +20,9 @@
 #include <assert.h>
 #include <vector>
 #include <array>
+#include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vulkan_interfaces.h>
 #include "VkCodecUtils/Helpers.h"
 #include <VkCodecUtils/HelpersDispatchTable.h>
@@ -111,48 +113,59 @@ public:
     bool    GetVideoEncodeQueryResultStatusSupport() const { return m_videoEncodeQueryResultStatusSupport; }
     VkQueueFlags GetVideoDecodeQueueFlag() const { return m_videoDecodeQueueFlags; }
     VkQueueFlags GetVideoEncodeQueueFlag() const { return m_videoEncodeQueueFlags; }
+    // The lock of a queue for one host access to it: a submit, a present or a wait for idle, which
+    // Vulkan requires to be externally synchronized. The lock is the queue's, whichever role names
+    // it: one VkQueue can be the graphics and the present queue, or the compute queue and a queue a
+    // filter retrieves itself, and every holder of the handle takes the same mutex.
     class MtQueueMutex {
 
     public:
         MtQueueMutex(const VulkanDeviceContext* devCtx, const QueueFamilySubmitType submitType, const int32_t queueIndex)
+            : m_queue(VK_NULL_HANDLE)
+            , m_mutex(nullptr)
         {
             switch (submitType) {
             case GRAPHICS:
-                m_queue = &devCtx->m_gfxQueue;
-                m_mutex = &devCtx->m_gfxQueueMutex;
+                m_queue = devCtx->m_gfxQueue;
                 break;
             case COMPUTE:
-                m_queue = &devCtx->m_computeQueue;
-                m_mutex = &devCtx->m_computeQueueMutex;
+                m_queue = devCtx->m_computeQueue;
                 break;
             case TRANSFER:
-                m_queue = &devCtx->m_trasferQueue;
-                m_mutex = &devCtx->m_transferQueueMutex;
+                m_queue = devCtx->m_trasferQueue;
                 break;
             case DECODE:
                 assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoDecodeNumQueues));
-                m_queue = &devCtx->m_videoDecodeQueues[queueIndex];
-                m_mutex = &devCtx->m_videoDecodeQueueMutexes[queueIndex];
+                if ((queueIndex >= 0) && ((size_t)queueIndex < devCtx->m_videoDecodeQueues.size())) {
+                    m_queue = devCtx->m_videoDecodeQueues[queueIndex];
+                }
                 break;
             case ENCODE:
                 assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoEncodeNumQueues));
-                m_queue = &devCtx->m_videoEncodeQueues[queueIndex];
-                m_mutex = &devCtx->m_videoEncodeQueueMutexes[queueIndex];
+                if ((queueIndex >= 0) && ((size_t)queueIndex < devCtx->m_videoEncodeQueues.size())) {
+                    m_queue = devCtx->m_videoEncodeQueues[queueIndex];
+                }
                 break;
             case PRESENT:
-                m_queue = &devCtx->m_presentQueue;
-                m_mutex = &devCtx->m_presentQueueMutex;
+                m_queue = devCtx->m_presentQueue;
                 break;
             default:
                 assert(!"Invalid queue type!");
-                m_queue = nullptr;
-                m_mutex = nullptr;
                 break;
             }
-            if (m_mutex) {
-                m_mutex->lock();
-            }
+            Lock(devCtx);
         }
+
+        // A queue the caller holds the handle of.
+        MtQueueMutex(const VulkanDeviceContext* devCtx, VkQueue queue)
+            : m_queue(queue)
+            , m_mutex(nullptr)
+        {
+            Lock(devCtx);
+        }
+
+        MtQueueMutex(const MtQueueMutex&) = delete;
+        MtQueueMutex& operator=(const MtQueueMutex&) = delete;
 
         ~MtQueueMutex() {
             if (m_mutex) {
@@ -162,16 +175,23 @@ public:
         }
 
         VkQueue GetQueue() {
-            return *m_queue;
+            return m_queue;
         }
 
-        operator VkQueue() { return *m_queue; }
+        operator VkQueue() { return m_queue; }
 
-        operator bool() { return ((m_queue != nullptr) && (*m_queue != VK_NULL_HANDLE)); }
+        operator bool() { return (m_queue != VK_NULL_HANDLE); }
 
     private:
-        const VkQueue*    m_queue;
-        mutable std::mutex* m_mutex;
+        void Lock(const VulkanDeviceContext* devCtx) {
+            if (m_queue != VK_NULL_HANDLE) {
+                m_mutex = &devCtx->GetQueueMutex(m_queue);
+                m_mutex->lock();
+            }
+        }
+
+        VkQueue     m_queue;
+        std::mutex* m_mutex;
     };
 
     VkResult MultiThreadedQueueSubmit(const QueueFamilySubmitType submitType, const int32_t queueIndex,
@@ -236,6 +256,19 @@ public:
     const VkExtensionProperties* FindDeviceExtension(const char* name) const;
     const char * FindRequiredDeviceExtension(const char* name) const;
 
+    // True when the device was created for descriptor buffers: VK_EXT_descriptor_buffer and
+    // VK_KHR_buffer_device_address are enabled, VK_KHR_push_descriptor is not, and the descriptorBuffer and
+    // bufferDeviceAddress features are on.
+    // The descriptor set layouts then use descriptor buffers (VulkanDescriptorSetLayout::CreateDescriptorSet).
+    bool UsesDescriptorBuffers() const { return m_descriptorBufferEnabled; }
+    // The device enables every core feature it has, robustBufferAccess among them, which sets the size of a
+    // buffer descriptor in a descriptor buffer.
+    bool IsRobustBufferAccessEnabled() const { return m_robustBufferAccessEnabled; }
+    // storageBuffer8BitAccess and storageBuffer16BitAccess, enabled when the device has them: the compute
+    // filter's YCbCr buffers hold their samples in 8- and 16-bit storage buffer elements.
+    bool HasStorageBuffer8BitAccess() const { return m_storageBuffer8BitAccess; }
+    bool HasStorageBuffer16BitAccess() const { return m_storageBuffer16BitAccess; }
+
     void PrintExtensions(bool deviceExt = false) const;
 
     // Keep the Vulkan loader (libvulkan.so.1 / vulkan-1.dll) mapped for
@@ -244,9 +277,9 @@ public:
     //
     // Closing it is right for a standalone sample that owns its process.
     // It is wrong wherever anything ELSE in the process has resolved
-    // Vulkan entry points out of the same shared object -- Chromium's
-    // gpu::VulkanFunctionPointers are bound to exactly this library --
-    // because the unload invalidates their function pointers while they
+    // Vulkan entry points out of the same shared object -- for example an
+    // embedder's own dispatch table bound to the same libvulkan -- because
+    // the unload invalidates their function pointers while they
     // still hold them. The encoder context sets this in both of its
     // modes, including for a context it creates and releases inside one
     // call; nothing else in the tree does.
@@ -385,6 +418,10 @@ private:
 
     VkResult PopulateDeviceExtensions();
 
+    // The mutex of a queue, made on its first use: one for each VkQueue handle, so that every
+    // MtQueueMutex of that queue takes the same one.
+    std::mutex& GetQueueMutex(VkQueue queue) const;
+
 private:
     VulkanLibraryHandleType m_libHandle;
     VkInstance m_instance;
@@ -417,12 +454,13 @@ private:
     VkQueue                 m_presentQueue;
     std::vector<VkQueue>    m_videoDecodeQueues;
     std::vector<VkQueue>    m_videoEncodeQueues;
-    mutable std::mutex                                  m_gfxQueueMutex;
-    mutable std::mutex                                  m_computeQueueMutex;
-    mutable std::mutex                                  m_transferQueueMutex;
-    mutable std::mutex                                  m_presentQueueMutex;
-    mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
-    mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
+    // The mutex of each queue MtQueueMutex has locked, by handle (GetQueueMutex()).
+    mutable std::mutex                                               m_queueMutexesLock;
+    mutable std::unordered_map<VkQueue, std::unique_ptr<std::mutex>> m_queueMutexes;
+    bool                               m_descriptorBufferEnabled = false;
+    bool                               m_robustBufferAccessEnabled = false;
+    bool                               m_storageBuffer8BitAccess = false;
+    bool                               m_storageBuffer16BitAccess = false;
     VkDebugReportCallbackEXT           m_debugReport = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT           m_debugUtilsMessenger = VK_NULL_HANDLE;
     PFN_vkCreateDebugUtilsMessengerEXT  m_createDebugUtilsMessengerEXT = nullptr;

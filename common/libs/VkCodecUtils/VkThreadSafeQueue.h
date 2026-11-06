@@ -17,7 +17,7 @@
 #ifndef _VKCODECUTILS_VKTHREADSAFEQUEUE_H_
 #define _VKCODECUTILS_VKTHREADSAFEQUEUE_H_
 
-#include <cstdint>  // chromium: needed for uint32_t under -fmodules
+#include <cstdint>  // uint32_t; required under -fmodules
 
 #include <queue>
 #include <atomic>

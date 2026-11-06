@@ -212,10 +212,13 @@ public:
     /**
      * @brief Initialize Vulkan device and resources
      * @param verbose Enable verbose logging
+     * @param descriptorBuffer Create the device with VK_EXT_descriptor_buffer and without
+     *        VK_KHR_push_descriptor, so that the filter's descriptors go through descriptor buffers
      * @return VK_SUCCESS on success
      */
     VkResult init(bool verbose,
-                  bool validate = false, const char* deviceUuidStr = nullptr);
+                  bool validate = false, const char* deviceUuidStr = nullptr,
+                  bool descriptorBuffer = false);
     
     /**
      * @brief Run a single test case
@@ -339,7 +342,21 @@ private:
     VkResult copyImageToStagingBuffer(const TestIOSlot& slot,
                                      VkSharedBaseObj<VkImageResource>& image,
                                      VkSharedBaseObj<VkBufferResource>& stagingBuffer);
-    
+
+    /**
+     * @brief Record the upload of a pattern into an image in the GENERAL layout.
+     *
+     * One region per plane, from a host-visible staging buffer that holds the planes
+     * tightly packed, as generateTestPattern() stages them. The staging buffer must
+     * outlive the submission. The caller records the barrier that orders the copy
+     * before the image's next use.
+     */
+    VkResult recordPatternUpload(VkCommandBuffer cmdBuffer,
+                                 const TestIOSlot& slot,
+                                 VkSharedBaseObj<VkImageResource>& image,
+                                 const std::vector<uint8_t>& pattern,
+                                 VkSharedBaseObj<VkBufferResource>& stagingBuffer);
+
     /**
      * @brief Generate reference output data for validation
      */

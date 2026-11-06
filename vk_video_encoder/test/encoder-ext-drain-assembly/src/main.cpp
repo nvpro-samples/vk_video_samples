@@ -73,7 +73,7 @@
  * So after DrainPendingFrames() every subsequent frame is encoded and then
  * has no completion record made for it. No capture => AcquireNextEncodedFrame
  * never yields it => ReleaseEncodedFrame is never called => the PendingFrame
- * and the resource registration are held forever and inFlight only grows.
+ * is held forever.
  * That is the "16 undelivered/unreleased frames" at teardown, exactly.
  *
  * THE FIX, against those same three links. Link 2 is the one that was wrong:
@@ -230,9 +230,8 @@ struct InputImage {
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
-// A host-written LINEAR NV12 image, transfer-source usage only, so the
-// registration routes STAGED -- the same routing as the acquire-fd and
-// release-fence siblings, so the numbers here are comparable to theirs.
+// A host-written LINEAR NV12 image, transfer-source usage only, so each frame
+// routes STAGED.
 bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
                       VkDevice device, InputImage* out)
 {
@@ -297,7 +296,14 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
 }
 
 VkSharedBaseObj<VulkanVideoEncoderExt> g_encoder;
-VkVideoEncoderResource g_resource = VK_VIDEO_ENCODER_RESOURCE_NULL;
+VkImage  g_image         = VK_NULL_HANDLE;
+// THE LAYOUT A FRAME DECLARES IS THE ONE THE IMAGE IS IN. The image is
+// created PREINITIALIZED, so its first frame declares that. The encoder hands
+// a staged image back in the layout the frame declared, or in GENERAL where
+// that layout is not one a barrier may transition to -- PREINITIALIZED is not
+// -- so once a frame has been accepted the image is in GENERAL, and every
+// later frame declares GENERAL.
+VkImageLayout g_imageLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
 uint64_t g_frameId       = 0;
 uint32_t g_captured      = 0;
 uint64_t g_capturedBytes = 0;
@@ -321,29 +327,33 @@ uint32_t SubmitBatchAndCount(uint32_t count, uint32_t* outSubmitted)
     const uint32_t capturedBefore = g_captured;
     uint32_t submitted = 0;
     for (uint32_t f = 0; f < count; f++) {
-        VkVideoEncoderFrameSubmitInfo info = {};
-        info.sType         = VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_PARAMS;
-        info.resource      = g_resource;
-        info.frameId       = g_frameId;
-        info.pts           = g_frameId;
-        info.qpOverride    = -1;
-        info.currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VkVideoEncodeInputFrame frame = {};
+        frame.sType          = VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_FRAME;
+        frame.image          = g_image;
+        frame.format         = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+        frame.width          = kWidth;
+        frame.height         = kHeight;
+        frame.imageTiling    = VK_IMAGE_TILING_LINEAR;
+        frame.currentLayout  = g_imageLayout;
+        frame.inputResidency = VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;
+        frame.frameId        = g_frameId;
+        frame.pts            = g_frameId;
+        frame.qpOverride     = -1;
 
-        VkVideoEncoderStatusCode status =
-            g_encoder->SubmitRegisteredFrame(info, nullptr);
-        for (int retry = 0;
-             (status == VK_VIDEO_ENCODER_STATUS_NOT_READY) && (retry < 500);
+        VkResult status = g_encoder->SubmitExternalFrame(frame, nullptr);
+        for (int retry = 0; (status == VK_NOT_READY) && (retry < 500);
              retry++) {
             DrainCaptures();
             struct timespec ts = {0, 1000000};
             nanosleep(&ts, nullptr);
-            status = g_encoder->SubmitRegisteredFrame(info, nullptr);
+            status = g_encoder->SubmitExternalFrame(frame, nullptr);
         }
-        if (status != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
+        if (status != VK_SUCCESS) {
             std::printf("    submit of frame %llu returned %d\n",
                         (unsigned long long)g_frameId, (int)status);
             break;
         }
+        g_imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         g_frameId++;
         submitted++;
         DrainCaptures();
@@ -429,26 +439,7 @@ static int RunTest(int argc, char** argv)
         return enctest::Fail("could not create the input image");
     }
 
-    VkVideoEncoderExternalImageDescriptor desc = {};
-    desc.sType         = VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR;
-    desc.handleType    = VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_VK_IMAGE;
-    desc.format        = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-    desc.width         = kWidth;
-    desc.height        = kHeight;
-    desc.tiling        = VK_IMAGE_TILING_LINEAR;
-    desc.imageUsage    = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    desc.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-    desc.planeCount    = 0;
-    desc.residency     = VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;
-    desc.defaultLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-    desc.existingImage = input.image;
-
-    const VkVideoEncoderStatusCode regStatus =
-        g_encoder->RegisterImageResource(desc, 0, &g_resource, nullptr);
-    if ((regStatus != VK_VIDEO_ENCODER_STATUS_SUCCESS) ||
-        (g_resource == VK_VIDEO_ENCODER_RESOURCE_NULL)) {
-        return enctest::Fail("RegisterImageResource failed, status", regStatus);
-    }
+    g_image = input.image;
 
     //=========================================================================
     // BATCH 1 -- the control. Ends with DrainPendingFrames().
@@ -495,16 +486,14 @@ static int RunTest(int argc, char** argv)
               "ever call PushCapturedBitstream; nothing sets it true again "
               "outside InitEncoder (:3054), so no frame submitted after that "
               "call can ever produce a completion record. Every one of these "
-              "frames now holds its PendingFrame and its resource "
-              "registration forever. NO FENCE WAS INVOLVED IN THIS RUN.");
+              "frames now holds its PendingFrame forever. NO FENCE WAS "
+              "INVOLVED IN THIS RUN.");
 
     g_case = "teardown";
     std::printf("  captured frames=%u  bitstream bytes=%llu\n",
                 g_captured, (unsigned long long)g_capturedBytes);
 
-    // Order matters and the header states it: unregister BEFORE destroying
-    // the image, and destroy the image BEFORE releasing the encoder.
-    g_encoder->UnregisterImageResource(g_resource);
+    // Order matters: destroy the image BEFORE releasing the encoder.
     fns.DestroyImage(device, input.image, nullptr);
     fns.FreeMemory(device, input.memory, nullptr);
     g_encoder = nullptr;

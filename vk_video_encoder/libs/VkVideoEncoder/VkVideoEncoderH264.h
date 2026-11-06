@@ -17,9 +17,12 @@
 #ifndef _VKVIDEOENCODER_VKVIDEOENCODERH264_H_
 #define _VKVIDEOENCODER_VKVIDEOENCODERH264_H_
 
+#include <vector>
+
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoEncoder/VkVideoEncoderStateH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
+#include "VkVideoEncoder/VkEncoderDpbPictures.h"
 
 class VkVideoEncoderH264 : public VkVideoEncoder {
 
@@ -27,8 +30,6 @@ public:
 
     enum { NON_VCL_BITSTREAM_OFFSET = 4096 };
     enum { MAX_NUM_SLICES_H264 = 64 };
-    enum { MAX_MEM_MGMNT_CTRL_OPS_COMMANDS = 16 }; // max mmco commands.
-    enum { MAX_REFFERENCES = 16 };
 
     struct VkVideoEncodeFrameInfoH264 : public VkVideoEncodeFrameInfo {
 
@@ -38,12 +39,10 @@ public:
         StdVideoEncodeH264SliceHeader            stdSliceHeader[MAX_NUM_SLICES_H264];
         VkVideoEncodeH264RateControlInfoKHR      rateControlInfoH264;
         VkVideoEncodeH264RateControlLayerInfoKHR rateControlLayersInfoH264[1];
-        StdVideoEncodeH264ReferenceListsInfo     stdReferenceListsInfo;
-        StdVideoEncodeH264ReferenceInfo          stdReferenceInfo[MAX_REFFERENCES];
-        VkVideoEncodeH264DpbSlotInfoKHR          stdDpbSlotInfo[MAX_REFFERENCES];
-        StdVideoEncodeH264RefListModEntry        refList0ModOperations[MAX_REFFERENCES];
-        StdVideoEncodeH264RefListModEntry        refList1ModOperations[MAX_REFFERENCES];
-        StdVideoEncodeH264RefPicMarkingEntry     refPicMarkingEntry[MAX_MEM_MGMNT_CTRL_OPS_COMMANDS];
+        // What the DPB library writes for the picture: the reference syntax stdPictureInfo points to,
+        // and the slots the video commands bind.
+        vvs::dpb::H264EncodeSyntax               dpbSyntax;
+        vvs::dpb::PictureResult                  dpbResult;
 
         VkVideoEncodeFrameInfoH264()
           : VkVideoEncodeFrameInfo(&pictureInfo, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)
@@ -53,12 +52,8 @@ public:
           , stdSliceHeader{}
           , rateControlInfoH264{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR }
           , rateControlLayersInfoH264 {{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR }}
-          , stdReferenceListsInfo()
-          , stdReferenceInfo{}
-          , stdDpbSlotInfo{}
-          , refList0ModOperations{}
-          , refList1ModOperations{}
-          , refPicMarkingEntry{}
+          , dpbSyntax()
+          , dpbResult()
         {
             pictureInfo.naluSliceEntryCount = 1; // FIXME: support more than one
             pictureInfo.pNaluSliceEntries = naluSliceInfo;
@@ -71,11 +66,6 @@ public:
                 sliceInfo.pNext = nullptr;
                 sliceInfo.pStdSliceHeader = &stdSliceHeader[i];
             }
-
-            stdPictureInfo.pRefLists           = &stdReferenceListsInfo;
-
-            stdDpbSlotInfo->sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR;
-            stdDpbSlotInfo->pStdReferenceInfo = stdReferenceInfo;
         };
 
         virtual void Reset(bool releaseResources = true) {
@@ -93,12 +83,7 @@ public:
             // stdSliceHeader()
             assert(rateControlInfoH264.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR);
             assert(rateControlLayersInfoH264[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR);
-            // stdReferenceListsInfo()
-            // stdReferenceInfo{}
-            // stdDpbSlotInfo{}
-            // refList0ModOperations{}
-            // refList1ModOperations{}
-            // refPicMarkingEntry{}
+            // dpbSyntax and dpbResult: written whole by each picture's DPB call.
         }
 
         virtual ~VkVideoEncodeFrameInfoH264() {
@@ -110,7 +95,8 @@ public:
         : VkVideoEncoder(vkDevCtx)
         , m_encoderConfig()
         , m_h264()
-        , m_dpb264()
+        , m_dpb()
+        , m_dpbPictures()
     { }
 
     virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig) override;
@@ -144,11 +130,6 @@ public:
         m_frameInfoBuffersQueue = nullptr;
         m_videoSessionParameters = nullptr;
         m_videoSession = nullptr;
-
-        if (m_dpb264) {
-            m_dpb264->DpbDestroy();
-            m_dpb264 = NULL;
-        }
     }
 
     // Must be called from VkVideoEncoder::EncodeFrameCommon only
@@ -174,22 +155,11 @@ private:
         return (VkVideoEncodeFrameInfoH264*)pEncodeFrameInfo;
     }
 
-    void POCBasedRefPicManagement(StdVideoEncodeH264RefPicMarkingEntry* m_mmco,
-                                  uint8_t& m_refPicMarkingOpCount);
-
-    void FrameNumBasedRefPicManagement(StdVideoEncodeH264RefPicMarkingEntry* m_mmco,
-                                       uint8_t& m_refPicMarkingOpCount);
-
-    VkResult SetupRefPicReorderingCommands(const PicInfoH264 *pPicInfo,
-                                           const StdVideoEncodeH264SliceHeader *slh,
-                                           StdVideoEncodeH264ReferenceListsInfoFlags* pFlags,
-                                           StdVideoEncodeH264RefListModEntry* m_ref_pic_list_modification_l0,
-                                           uint8_t& m_refList0ModOpCount);
-
 private:
     VkSharedBaseObj<EncoderConfigH264> m_encoderConfig;
     EncoderH264State                   m_h264;
-    VkEncDpbH264*                      m_dpb264;
+    vvs::dpb::H264Encode               m_dpb;
+    VkEncoderDpbPictures               m_dpbPictures;
     VkSharedBaseObj<VulkanBufferPool<VkVideoEncodeFrameInfoH264>> m_frameInfoBuffersQueue;
 };
 

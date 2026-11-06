@@ -28,6 +28,7 @@
 #include <string.h>
 #include <linux/input.h>
 #include "VkCodecUtils/FrameProcessor.h"
+#include "Logger.h"
 
 const std::vector<VkExtensionProperties> waylandSurfaceExtensions {
     VkExtensionProperties{ VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION } };
@@ -194,7 +195,7 @@ void ShellWayland::InitConnection() {
 
         if (!m_shell) throw std::runtime_error("failed to bind shell");
     } catch (const std::exception &e) {
-        std::cerr << "Could not initialize Wayland: " << e.what() << std::endl;
+        LOG_S_ERROR << "Could not initialize Wayland: " << e.what() << std::endl;
         exit(-1);
     }
 }

@@ -33,10 +33,7 @@
 #include "VulkanVideoProcessor.h"
 #include "vulkan_interfaces.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
-
-size_t ConvertFrameToNv12(const VulkanDeviceContext* vkDevCtx, int32_t frameWidth, int32_t frameHeight,
-                         VkSharedBaseObj<VkImageResource>& imageResource,
-                         uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo);
+#include "Logger.h"
 
 // The profile idc of a decode codec's base profile, which with 8-bit 4:2:0 names the profile a
 // decoder of the codec supports first.
@@ -79,7 +76,7 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     const bool verbose = false;
 
     if (vkDevCtx->GetVideoDecodeQueue(videoQueueIndx) == VkQueue()) {
-        std::cerr << "videoQueueIndx is out of bounds: " << videoQueueIndx <<
+        LOG_S_ERROR << "videoQueueIndx is out of bounds: " << videoQueueIndx <<
                      " Max decode queues: " << vkDevCtx->GetVideoDecodeNumQueues() << std::endl;
         assert(!"Invalid Video Queue");
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -103,7 +100,7 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     VkResult result =  VulkanVideoFrameBuffer::Create(vkDevCtx, m_vkVideoFrameBuffer);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
+        LOG_ERROR("Create VulkanVideoFrameBuffer result: 0x%x\n", result);
         return result;
     }
 
@@ -155,7 +152,7 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         m_vkVideoDecoder->SetExportPreferences(exportPreferCompressed, exportSmallestBlockHeight);
     }
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: Create VkVideoDecoder result: 0x%x\n", result);
+        LOG_ERROR("Create VkVideoDecoder result: 0x%x\n", result);
         return result;
     }
 
@@ -170,7 +167,7 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(vkDevCtx,
                                                        vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        m_videoStreamDemuxer->GetVideoCodec())) {
-        std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(m_videoStreamDemuxer->GetVideoCodec()) << " is not supported! ***" << std::endl;
+        LOG_S_INFO << "*** The video codec " << VkVideoCoreProfile::CodecToName(m_videoStreamDemuxer->GetVideoCodec()) << " is not supported! ***" << std::endl;
         // A codec this device does not implement is a legitimate runtime answer,
         // not a programming error -- report it and let the caller exit cleanly.
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
@@ -205,10 +202,10 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
             // Hand the driver's rejection back verbatim instead of asserting -- an assert() aborts
             // the debug build on a legitimate input and vanishes under NDEBUG, leaving execution
             // to continue into a decoder that was never initialized.
-            std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
+            LOG_S_ERROR << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
             return result;
         }
-        std::cout << "*** The demuxer's profile is not supported (" << result << "); the "
+        LOG_S_WARN << "*** The demuxer's profile is not supported (" << result << "); the "
                   << VkVideoCoreProfile::CodecToName(codec)
                   << " base profile gives the bitstream alignments, and the stream's sequence decides ***"
                   << std::endl;
@@ -222,7 +219,7 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                           (uint32_t)videoCapabilities.minBitstreamBufferSizeAlignment);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: CreateParser() result: 0x%x\n", result);
+        LOG_ERROR("CreateParser() result: 0x%x\n", result);
         return result;
     }
 
@@ -344,15 +341,15 @@ void VulkanVideoProcessor::Deinit()
         m_dumpPool.flush();
         m_dumpPool.shutdown();
         if (m_dumpPool.getReleaseOrderErrors() != 0) {
-            fprintf(stderr, "ERROR: %llu output frame releases were out of display order\n",
+            LOG_ERROR("%llu output frame releases were out of display order\n",
                     (unsigned long long)m_dumpPool.getReleaseOrderErrors());
         }
         if (m_dumpPool.getDisplayOrderGaps() != 0) {
-            fprintf(stderr, "ERROR: %llu runs of display orders were never queued for writing\n",
+            LOG_ERROR("%llu runs of display orders were never queued for writing\n",
                     (unsigned long long)m_dumpPool.getDisplayOrderGaps());
         }
         if (m_dumpPool.getFramesLate() != 0) {
-            fprintf(stderr, "ERROR: %llu output frames were queued after their turn and not written\n",
+            LOG_ERROR("%llu output frames were queued after their turn and not written\n",
                     (unsigned long long)m_dumpPool.getFramesLate());
         }
     }
@@ -366,7 +363,7 @@ void VulkanVideoProcessor::Deinit()
 void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData)
 {
     if (dumpData) {
-        std::cout << "Display Area : " << std::endl
+        LOG_S_INFO << "Display Area : " << std::endl
                   << "\tLeft : " << videoFormat->display_area.left << std::endl
                   << "\tRight : " << videoFormat->display_area.right << std::endl
                   << "\tTop : " << videoFormat->display_area.top << std::endl
@@ -374,7 +371,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     }
 
     if (dumpData) {
-        std::cout << "Geometry  : " << std::endl
+        LOG_S_INFO << "Geometry  : " << std::endl
                   << "\tCoded Width : " << videoFormat->coded_width << std::endl
                   << "\tDisplayed Width : " << videoFormat->display_area.right - videoFormat->display_area.left << std::endl
                   << "\tCoded Height : " << videoFormat->coded_height << std::endl
@@ -383,7 +380,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
 
     const char* pCodec = VkVideoCoreProfile::CodecToName(videoFormat->codec);
     if (dumpData) {
-        std::cout << "Codec : " << pCodec << std::endl;
+        LOG_S_INFO << "Codec : " << pCodec << std::endl;
     }
 
     /* These below token numbers are based on "chroma_format_idc" from the spec. */
@@ -403,7 +400,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     assert(nvVideoChromaFormat[videoFormat->chromaSubsampling] != nullptr);
     const char* pVideoChromaFormat = nvVideoChromaFormat[videoFormat->chromaSubsampling];
     if (dumpData) {
-        std::cout << "VideoChromaFormat : " << pVideoChromaFormat << std::endl;
+        LOG_S_INFO << "VideoChromaFormat : " << pVideoChromaFormat << std::endl;
     }
 
     static const char* VideoFormat[] = {
@@ -421,7 +418,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     assert(videoFormat->video_signal_description.video_format < sizeof(VideoFormat)/sizeof(VideoFormat[0]));
     const char* pVideoFormat = VideoFormat[videoFormat->video_signal_description.video_format];
     if (dumpData) {
-        std::cout << "VideoFormat : " << pVideoFormat << std::endl;
+        LOG_S_INFO << "VideoFormat : " << pVideoFormat << std::endl;
     }
 
     const char* ColorPrimaries[] = {
@@ -442,7 +439,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         ? ColorPrimaries[videoFormat->video_signal_description.color_primaries]
         : "Unknown";
     if (dumpData) {
-        std::cout << "ColorPrimaries : " << pColorPrimaries << std::endl;
+        LOG_S_INFO << "ColorPrimaries : " << pColorPrimaries << std::endl;
     }
 
     const char* TransferCharacteristics[] = {
@@ -469,7 +466,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         ? TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics]
         : "Unknown";
     if (dumpData) {
-        std::cout << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
+        LOG_S_INFO << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
     }
 
     const char* MatrixCoefficients[] = {
@@ -489,131 +486,8 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         ? MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients]
         : "Unknown";
     if (dumpData) {
-        std::cout << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
+        LOG_S_INFO << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
     }
-}
-
-const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format);
-size_t ConvertFrameToNv12(const VulkanDeviceContext *vkDevCtx, int32_t frameWidth, int32_t frameHeight,
-                                                    VkSharedBaseObj<VkImageResource>& imageResource,
-                                                    uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo)
-{
-    size_t outputBufferSize = 0;
-    VkDevice device   = imageResource->GetDevice();
-    VkImage  srcImage = imageResource->GetImage ();
-    VkSharedBaseObj<VulkanDeviceMemoryImpl> srcImageDeviceMemory(imageResource->GetMemory());
-
-    // Map the image and read the image data.
-    VkDeviceSize imageOffset = imageResource->GetImageDeviceMemoryOffset();
-    VkDeviceSize maxSize = 0;
-    const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageOffset, maxSize);
-    assert(readImagePtr != nullptr);
-
-    int32_t secondaryPlaneWidth = frameWidth;
-    int32_t secondaryPlaneHeight = frameHeight;
-    int32_t imageHeight = frameHeight;
-    bool isUnnormalizedRgba = false;
-    if (mpInfo && (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED) && !(mpInfo->planesLayout.disjoint)) {
-        isUnnormalizedRgba = true;
-    }
-
-    if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
-        secondaryPlaneWidth = (secondaryPlaneWidth + 1) / 2;
-    }
-    if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY) {
-        secondaryPlaneHeight = (secondaryPlaneHeight + 1) / 2;
-    }
-
-    VkImageSubresource subResource = {};
-    VkSubresourceLayout layouts[3];
-    memset(layouts, 0x00, sizeof(layouts));
-
-    if (mpInfo && !isUnnormalizedRgba) {
-        switch (mpInfo->planesLayout.layout) {
-            case YCBCR_SINGLE_PLANE_UNNORMALIZED:
-            case YCBCR_SINGLE_PLANE_INTERLEAVED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-                break;
-            case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
-                break;
-            case YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED:
-            case YCBCR_PLANAR_CBCR_BLOCK_JOINED:
-            case YCBCR_PLANAR_STRIDE_PADDED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
-                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[2]);
-                break;
-            default:
-                assert(0);
-        }
-
-    } else {
-        vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-    }
-
-    // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
-    uint32_t bytesPerPixel = 1;
-    if (mpInfo->planesLayout.bpp != YCBCRA_8BPP) {
-        bytesPerPixel = 2;
-    }
-
-    uint32_t numPlanes = 3;
-    VkSubresourceLayout yuvPlaneLayouts[3] = {};
-    yuvPlaneLayouts[0].offset = 0;
-    yuvPlaneLayouts[0].rowPitch = frameWidth * bytesPerPixel;
-    yuvPlaneLayouts[1].offset = yuvPlaneLayouts[0].rowPitch * frameHeight;
-    yuvPlaneLayouts[1].rowPitch = secondaryPlaneWidth * bytesPerPixel;
-    yuvPlaneLayouts[2].offset = yuvPlaneLayouts[1].offset + (yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
-    yuvPlaneLayouts[2].rowPitch = secondaryPlaneWidth * bytesPerPixel;
-
-    // Copy the luma plane, always assume the 422 or 444 formats and src CbCr always is interleaved (shares the same plane).
-    uint32_t numCompatiblePlanes = 1;
-    for (uint32_t plane = 0; plane < numCompatiblePlanes; plane++) {
-        const uint8_t* pSrc = readImagePtr + layouts[plane].offset;
-        uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
-        for (int height = 0; height < imageHeight; height++) {
-            memcpy(pDst, pSrc, (size_t)yuvPlaneLayouts[plane].rowPitch);
-            pDst += (size_t)yuvPlaneLayouts[plane].rowPitch;
-            pSrc += (size_t)layouts[plane].rowPitch;
-        }
-    }
-
-    // 9+ bpp is output as 16bpp yuv.
-    for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
-        uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
-        uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
-        for (int height = 0; height < secondaryPlaneHeight; height++) {
-            const uint8_t* pSrc;
-            if (srcPlane != plane) {
-                pSrc = readImagePtr + layouts[srcPlane].offset + ((plane - 1) * bytesPerPixel) + (layouts[srcPlane].rowPitch * height);
-
-            } else {
-                pSrc = readImagePtr + layouts[srcPlane].offset + (layouts[srcPlane].rowPitch * height);
-            }
-
-            for (VkDeviceSize width = 0; width < (yuvPlaneLayouts[plane].rowPitch / bytesPerPixel); width++) {
-                memcpy(pDst, pSrc, bytesPerPixel);
-                pDst += bytesPerPixel;
-                pSrc += 2 * bytesPerPixel;
-            }
-        }
-    }
-
-    outputBufferSize += ((size_t)yuvPlaneLayouts[0].rowPitch * imageHeight);
-    if (mpInfo->planesLayout.numberOfExtraPlanes >= 1) {
-        outputBufferSize += ((size_t)yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
-        outputBufferSize += ((size_t)yuvPlaneLayouts[2].rowPitch * secondaryPlaneHeight);
-    }
-
-    return outputBufferSize;
 }
 
 size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
@@ -699,23 +573,23 @@ uint32_t VulkanVideoProcessor::Restart(int64_t& bitstreamOffset)
 bool VulkanVideoProcessor::StreamCompleted()
 {
     if (--m_loopCount > 0) {
-        std::cout << "Restarting video stream with loop number " << (m_loopCount + 1) << std::endl;
+        LOG_S_INFO << "Restarting video stream with loop number " << (m_loopCount + 1) << std::endl;
         // Reload the file stream
         int64_t bitstreamOffset = 0;
         Restart(bitstreamOffset);
         return false;
     } else {
 #if !defined(VK_VIDEO_NO_STDOUT_INFO)
-        std::cout << "End of Video Stream with status  " << VK_SUCCESS << std::endl;
+        LOG_S_INFO << "End of Video Stream with status  " << VK_SUCCESS << std::endl;
 #endif
         const uint64_t refusedUnits = m_vkParser ? m_vkParser->GetRefusedUnitCount() : 0;
         if (refusedUnits > 0) {
             // The parser drops a unit it refuses and carries on, so the stream ends normally.
-            std::cerr << "Parser: refused " << refusedUnits << " units of the stream" << std::endl;
+            LOG_S_ERROR << "Parser: refused " << refusedUnits << " units of the stream" << std::endl;
         }
         const uint64_t unsupportedPictures = GetUnsupportedPictureCount();
         if (unsupportedPictures > 0) {
-            std::cerr << "Parser: dropped " << unsupportedPictures
+            LOG_S_ERROR << "Parser: dropped " << unsupportedPictures
                       << " pictures that use a coding tool the decoder does not support" << std::endl;
         }
         return true;
@@ -752,7 +626,7 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
             // The parser stops when the decoder refuses a sequence, and only the decoder knows why.
             const VkResult sequenceResult = m_vkVideoDecoder->GetVideoSequenceResult();
             m_streamResult = (sequenceResult != VK_SUCCESS) ? sequenceResult : parserStatus;
-            std::cerr << "Parser: end of Video Stream with status  " << parserStatus << std::endl;
+            LOG_S_ERROR << "Parser: end of Video Stream with status  " << parserStatus << std::endl;
             retValue = -1;
         } else {
             retValue = (int32_t)bitstreamBytesConsumed;
@@ -801,7 +675,7 @@ int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* end
     if ((m_maxFrameCount != -1) && (m_videoFrameNum >= (uint32_t)m_maxFrameCount)) {
         // Tell the FrameProcessor we're done after this frame is drawn.
 #if !defined(VK_VIDEO_NO_STDOUT_INFO)
-        std::cout << "Number of video frames " << m_videoFrameNum
+        LOG_S_INFO << "Number of video frames " << m_videoFrameNum
                   << " of max frame number " << m_maxFrameCount << std::endl;
 #endif
         m_videoStreamsCompleted = StreamCompleted();

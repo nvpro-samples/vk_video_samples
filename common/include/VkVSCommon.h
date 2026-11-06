@@ -1,6 +1,8 @@
 #ifndef VKVS_COMMON_H
 #define VKVS_COMMON_H
 
+#include "Logger.h"
+
 // Common definitions for Vulkan Video Samples
 
 #ifdef __cplusplus

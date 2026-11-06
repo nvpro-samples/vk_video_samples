@@ -26,6 +26,7 @@
 #include "Helpers.h"
 #include "VkVideoFrameOutput.h"
 #include "VkCodecUtils/VkVideoCrc.h"
+#include "Logger.h"
 
 template<typename T>
 static void CopyPlaneData(const uint8_t* pSrc, uint8_t* pDst,
@@ -102,7 +103,7 @@ public:
         pFrame->imageViews[VulkanDecodedFrame::IMAGE_VIEW_TYPE_LINEAR].GetImageResourceView(imageResourceView);
         if (!imageResourceView) {
             // A frame no decode wrote has no image: it is reported and nothing is written for it.
-            fprintf(stderr, "The frame of picture %d has no image to write\n", pFrame->pictureIndex);
+            LOG_ERROR("The frame of picture %d has no image to write\n", pFrame->pictureIndex);
             return 0;
         }
         assert(pFrame->pictureIndex != -1);
@@ -129,7 +130,7 @@ public:
             if (semResult != VK_SUCCESS) {
                 uint64_t postWaitValue = 0;
                 vkDevCtx->GetSemaphoreCounterValue(*vkDevCtx, pFrame->frameCompleteSemaphore, &postWaitValue);
-                fprintf(stderr, "ERROR: Timeline semaphore wait for frame %d (displayOrder=%lld) "
+                LOG_ERROR("Timeline semaphore wait for frame %d (displayOrder=%lld) "
                         "failed with result %d (expected TL=%llu, before=%llu, after=%llu)\n",
                         pFrame->pictureIndex, (long long)pFrame->displayOrder,
                         semResult, (unsigned long long)pFrame->frameCompleteDoneSemValue,
@@ -198,19 +199,19 @@ public:
         std::string fileNameWithModExt;
         // Check if the output file's extension is .out for Fluster use
         if (hasExtension(fileName, ".out")) {
-            std::cout << std::endl << "The output file's (" << fileName << ") extension is .out"
+            LOG_S_INFO << std::endl << "The output file's (" << fileName << ") extension is .out"
                       << std::endl;
         // Check if the file does not have a y4m extension,
         // but y4m format is requested.
         } else if (y4mFormat && !hasExtension(fileName, ".y4m")) {
-            std::cout << std::endl << "y4m output format is requested, ";
-            std::cout << "but the output file's (" << fileName << ") extension isn't .y4m!"
+            LOG_S_INFO << std::endl << "y4m output format is requested, ";
+            LOG_S_INFO << "but the output file's (" << fileName << ") extension isn't .y4m!"
                       << std::endl;
             fileNameWithModExt = fileName + std::string(".y4m");
             fileName = fileNameWithModExt.c_str();
         } else if ((y4mFormat == false) && !hasExtension(fileName, ".yuv")) {
-            std::cout << std::endl << "Raw yuv output format is requested, ";
-            std::cout << "but the output file's (" << fileName << ") extension isn't .yuv!"
+            LOG_S_INFO << std::endl << "Raw yuv output format is requested, ";
+            LOG_S_INFO << "but the output file's (" << fileName << ") extension isn't .yuv!"
                       << std::endl;
             fileNameWithModExt = fileName + std::string(".yuv");
             fileName = fileNameWithModExt.c_str();
@@ -220,7 +221,7 @@ public:
             m_outputFile = fopen(fileName, "wb");
             if (m_outputFile) {
 #if !defined(VK_VIDEO_NO_STDOUT_INFO)
-                std::cout << "Output file name is: " << fileName << std::endl;
+                LOG_S_INFO << "Output file name is: " << fileName << std::endl;
 #endif
                 return m_outputFile;
             }

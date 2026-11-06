@@ -834,6 +834,78 @@ TestCaseConfig TC076_P010Buffer_to_RGBABuffer() {
     return config;
 }
 
+TestCaseConfig TC077_NV12Image_to_I420Buffer() {
+    TestCaseConfig config;
+    config.name = "TC077_NV12Image_to_I420Buffer";
+    config.filterType = VulkanFilterYuvCompute::YCBCRCOPY;
+    config.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+    config.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+
+    config.inputs.push_back({
+        .format = TestFormat::NV12,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = true, .validateOutput = false
+    });
+    config.outputs.push_back({
+        .format = TestFormat::I420,
+        .resourceType = ResourceType::Buffer,
+        .tiling = TilingMode::Linear,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = false, .validateOutput = true
+    });
+    return config;
+}
+
+TestCaseConfig TC078_I420Buffer_to_P010Buffer() {
+    TestCaseConfig config;
+    config.name = "TC078_I420Buffer_to_P010Buffer";
+    config.filterType = VulkanFilterYuvCompute::YCBCRCOPY;
+    config.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+    config.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+
+    config.inputs.push_back({
+        .format = TestFormat::I420,
+        .resourceType = ResourceType::Buffer,
+        .tiling = TilingMode::Linear,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = true, .validateOutput = false
+    });
+    config.outputs.push_back({
+        .format = TestFormat::P010,
+        .resourceType = ResourceType::Buffer,
+        .tiling = TilingMode::Linear,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = false, .validateOutput = true
+    });
+    return config;
+}
+
+TestCaseConfig TC079_P010Buffer_to_NV12Image() {
+    TestCaseConfig config;
+    config.name = "TC079_P010Buffer_to_NV12Image";
+    config.filterType = VulkanFilterYuvCompute::YCBCRCOPY;
+    config.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+    config.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+
+    config.inputs.push_back({
+        .format = TestFormat::P010,
+        .resourceType = ResourceType::Buffer,
+        .tiling = TilingMode::Linear,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = true, .validateOutput = false
+    });
+    config.outputs.push_back({
+        .format = TestFormat::NV12,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = false, .validateOutput = true
+    });
+    return config;
+}
+
 // =============================================================================
 // Linear Tiling Tests
 // =============================================================================
@@ -1383,7 +1455,7 @@ TestCaseConfig TC133_BGRA_NoSwapControl_MustDiffer() {
 
 std::vector<TestCaseConfig> getAllStandardTests() {
     return {
-        // RGBA to YCbCr (RGBA to Y410 is in getDisabledTests())
+        // RGBA to YCbCr
         TC001_RGBA_to_NV12(),
         TC001L_RGBA_to_NV12_Linear(),
         TC005L_RGBA_to_NV16_Linear(),
@@ -1396,8 +1468,9 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC005_RGBA_to_NV16(),
         TC006_RGBA_to_P210(),
         TC007_RGBA_to_YUV444(),
+        TC008_RGBA_to_Y410(),
 
-        // YCbCr to RGBA (the packed input is in getDisabledTests())
+        // YCbCr to RGBA
         TC010_NV12_to_RGBA(),
         TC011_P010_to_RGBA(),
         TC012_P012_to_RGBA(),
@@ -1406,6 +1479,7 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC015_P210_to_RGBA(),
         TC015b_P212_to_RGBA(),
         TC016_YUV444_to_RGBA(),
+        TC017_Y410_to_RGBA(),
 
         // Color primaries (BT.601, BT.709, BT.2020)
         TC020_RGBA_to_NV12_BT601(),
@@ -1560,8 +1634,20 @@ std::vector<TestCaseConfig> get12BitTests() {
 }
 
 std::vector<TestCaseConfig> getBufferIOTests() {
-    // TC070 to TC076 are in getDisabledTests(): runTest() has no buffer input or output.
-    return {};
+    // The filter's buffer input and output (FLAG_INPUT_BUFFER, FLAG_OUTPUT_BUFFER): an RGBA
+    // buffer on the RGBA side, an NV12 or P010 buffer on the YCbCr side.
+    return {
+        TC070_RGBABuffer_to_NV12Image(),
+        TC071_RGBAImage_to_NV12Buffer(),
+        TC072_RGBABuffer_to_NV12Buffer(),
+        TC073_NV12Buffer_to_RGBAImage(),
+        TC074_NV12Image_to_RGBABuffer(),
+        TC075_RGBABuffer_to_P010Buffer(),
+        TC076_P010Buffer_to_RGBABuffer(),
+        TC077_NV12Image_to_I420Buffer(),
+        TC078_I420Buffer_to_P010Buffer(),
+        TC079_P010Buffer_to_NV12Image(),
+    };
 }
 
 std::vector<TestCaseConfig> getColorPrimariesTests() {
@@ -1592,8 +1678,11 @@ std::vector<TestCaseConfig> getTransferTests() {
         // RGBA conversion with post-transfer
         TC116_RGBA2NV12_PostTransfer_ToBuffer(),
 
-        // Transfer-only operations (XFER filter types): TC117 to TC120 are in
-        // getDisabledTests().
+        // Transfer-only operations (XFER filter types)
+        TC117_XFER_ImageToBuffer_NV12(),
+        TC118_XFER_BufferToImage_NV12(),
+        TC119_XFER_ImageToImage_LinearToOptimal(),
+        TC120_XFER_ImageToImage_OptimalToLinear(),
     };
 }
 
@@ -1604,33 +1693,7 @@ std::vector<TestCaseConfig> getTransferTests() {
 std::vector<DisabledTestCase> getDisabledTests() {
     // Each entry names the defect the case shows. A case leaves this list in the change
     // that fixes its defect.
-    static const char* const kNoBufferIo =
-        "runTest() has no buffer input or output: it stops at \"Buffer I/O not yet "
-        "implemented in test\" before recording the filter";
-    static const char* const kTransferOnlyCreate =
-        "runTest() creates the filter with VulkanFilterYuvCompute::Create(), whose Init() has "
-        "no arm for the XFER_* types and asserts \"Invalid filter type\"; a transfer-only "
-        "filter comes from CreateTransfer(), which runTest() does not call";
-    return {
-        {TC008_RGBA_to_Y410(),
-         "RGBA2YCBCR to Y410 builds and dispatches, but generateReferenceOutput() has no CPU "
-         "model for a Y410 output, so the case reports UNVALIDATED"},
-        {TC017_Y410_to_RGBA(),
-         "YCBCR2RGBA with a packed input: GetOutputFormat() asks only the multi-planar format "
-         "table and answers VK_FORMAT_UNDEFINED, so GlslImageFormatQualifier() has no "
-         "qualifier for the output binding and asserts"},
-        {TC070_RGBABuffer_to_NV12Image(), kNoBufferIo},
-        {TC071_RGBAImage_to_NV12Buffer(), kNoBufferIo},
-        {TC072_RGBABuffer_to_NV12Buffer(), kNoBufferIo},
-        {TC073_NV12Buffer_to_RGBAImage(), kNoBufferIo},
-        {TC074_NV12Image_to_RGBABuffer(), kNoBufferIo},
-        {TC075_RGBABuffer_to_P010Buffer(), kNoBufferIo},
-        {TC076_P010Buffer_to_RGBABuffer(), kNoBufferIo},
-        {TC117_XFER_ImageToBuffer_NV12(), kTransferOnlyCreate},
-        {TC118_XFER_BufferToImage_NV12(), kTransferOnlyCreate},
-        {TC119_XFER_ImageToImage_LinearToOptimal(), kTransferOnlyCreate},
-        {TC120_XFER_ImageToImage_OptimalToLinear(), kTransferOnlyCreate},
-    };
+    return {};
 }
 
 // =============================================================================

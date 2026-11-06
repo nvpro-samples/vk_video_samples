@@ -34,9 +34,13 @@ frame loading). Vulkan defines each StdVideoDecodeAV1ReferenceInfo member by the
 information of the frame stored in that buffer.
 
 Every decoded picture of the trace is compared with the model. Mismatches are counted per category:
-  hdr-*      the picture's own header fields; hdr-quant, hdr-loop-filter, hdr-tx-mode, hdr-mode-flags and
-             hdr-film-grain compare syntax read late in the header with ffmpeg's reading of it, so a
+  hdr-*      the picture's own header fields; hdr-quant, hdr-loop-filter, hdr-lr, hdr-tx-mode, hdr-mode-flags
+             and hdr-film-grain compare syntax read late in the header with ffmpeg's reading of it, so a
              misread earlier in the header that shifts the bits shows there
+  hdr-lr     lr_params() (5.9.20): UsesLr, usesChromaLr and FrameRestorationType (of each coded plane, or
+             of every plane of a header that codes none, which restores no plane) and, when a plane uses
+             loop restoration, LoopRestorationSize as Vulkan takes it (log2 of the unit size in samples,
+             minus 5)
   hdr-frame-size  UpscaledWidth, FrameWidth and FrameHeight (5.9.5 to 5.9.8, with frame_size_with_refs)
   tile-*     the tile information Vulkan's StdVideoAV1TileInfo carries (5.9.15, 6.8.14), and the tile
              offsets and sizes: every tile lies inside the picture's data
@@ -89,11 +93,15 @@ MODEL_FIELDS = {
     "max_frame_width_minus_1", "max_frame_height_minus_1", "enable_superres", "use_128x128_superblock",
     "frame_size_override_flag", "frame_width_minus_1", "frame_height_minus_1", "use_superres", "coded_denom",
     "uniform_tile_spacing_flag", "tile_cols_log2", "tile_rows_log2", "context_update_tile_id",
-    "tile_size_bytes_minus1",
+    "tile_size_bytes_minus1", "lr_unit_shift", "lr_uv_shift",
 }
 MODEL_FIELD_ARRAYS = ("ref_order_hint[", "ref_frame_idx[", "feature_enabled[", "feature_value[", "loop_filter_level[",
-                      "point_y_value[", "found_ref[", "width_in_sbs_minus_1[", "height_in_sbs_minus_1[")
+                      "point_y_value[", "found_ref[", "width_in_sbs_minus_1[", "height_in_sbs_minus_1[", "lr_type[")
 SUPERRES_NUM, SUPERRES_DENOM_MIN = 8, 9
+# Remap_Lr_Type (5.9.20): the coded lr_type to FrameRestorationType, which StdVideoAV1FrameRestorationType
+# numbers the same way (NONE 0, WIENER 1, SGRPROJ 2, SWITCHABLE 3).
+RESTORE_NONE = 0
+REMAP_LR_TYPE = (RESTORE_NONE, 3, 1, 2)
 
 
 def clip3(lo, hi, value):
@@ -499,6 +507,19 @@ class Model:
                 tail["mode_flags"][name] = f.get(name, 0)
         if "num_y_points" in f:
             tail["point_y_value"] = [f.get(f"point_y_value[{i}]", 0) for i in range(f["num_y_points"])]
+        # lr_params() (5.9.20): ffmpeg prints lr_type for each plane of a header that codes it, and
+        # lr_unit_shift and lr_uv_shift as the specification's values after their increments. A header
+        # without lr_type, all lossless, with intra block copy or of a sequence without loop
+        # restoration, restores no plane.
+        coded = [f[f"lr_type[{i}]"] for i in range(3) if f"lr_type[{i}]" in f]
+        types = [REMAP_LR_TYPE[t] for t in coded] if coded else [RESTORE_NONE] * 3
+        sizes = None
+        if any(t != RESTORE_NONE for t in types):
+            luma = 1 + f.get("lr_unit_shift", 0)
+            chroma = luma - f.get("lr_uv_shift", 0)
+            sizes = [luma, chroma, chroma]
+        tail["lr"] = {"types": types, "sizes": sizes, "UsesLr": int(sizes is not None),
+                      "usesChromaLr": int(any(t != RESTORE_NONE for t in types[1:]))}
         return tail
 
 
@@ -667,6 +688,13 @@ def compare(frames, pictures, verbose):
                                                "DeltaQVAc")])
         report.check("hdr-loop-filter", key, "loop_filter_level", exp["loop_filter_level"],
                      pic["lf"]["loop_filter_level"])
+        lr = pic["lr"]
+        report.check("hdr-lr", key, "FrameRestorationType", exp["lr"]["types"],
+                     lr["FrameRestorationType"][:len(exp["lr"]["types"])])
+        for name in ("UsesLr", "usesChromaLr"):
+            report.check("hdr-lr", key, name, exp["lr"][name], int(name in flags))
+        if exp["lr"]["sizes"] is not None:
+            report.check("hdr-lr", key, "LoopRestorationSize", exp["lr"]["sizes"], lr["LoopRestorationSize"])
         report.check("hdr-tx-mode", key, "TxMode", exp["TxMode"], std["TxMode"])
         for name, value in exp["mode_flags"].items():
             report.check("hdr-mode-flags", key, name, value, int(name in flags))

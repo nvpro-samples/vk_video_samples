@@ -103,10 +103,6 @@ struct ConstQpSettings
 };
 
 
-// Process-wide stdio-silence gate: relocated to VkCodecUtils so common-
-// library code (VulkanDeviceContext) can use it without a layering
-// dependency on vk_video_encoder include paths. Included here so every
-// existing VkEncOut()/VkEncErr() call site keeps compiling unchanged.
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
+#include "Logger.h"
 
 #endif /* _VKVIDEOENCODERDEF_H_ */

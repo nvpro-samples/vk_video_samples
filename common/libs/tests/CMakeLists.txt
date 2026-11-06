@@ -38,7 +38,6 @@ set(TEST_HEADERS
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
-    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
@@ -132,7 +131,14 @@ vvs_add_validation_gated_test(FilterSmokeTest
 vvs_add_validation_gated_test(FilterAllTests
     TARGET ${PROJECT_NAME}
     ARGS   --all)
-set_tests_properties(FilterSmokeTest FilterAllTests PROPERTIES
+# The same cases with the descriptors in descriptor buffers: the device is
+# created with VK_EXT_descriptor_buffer and without VK_KHR_push_descriptor, which
+# the layouts would otherwise take. A device without descriptor buffers reports
+# SKIPPED.
+vvs_add_validation_gated_test(FilterDescriptorBufferTests
+    TARGET ${PROJECT_NAME}
+    ARGS   --all --descriptor-buffer)
+set_tests_properties(FilterSmokeTest FilterAllTests FilterDescriptorBufferTests PROPERTIES
                      LABELS "gpu"
                      TIMEOUT 900)
 
@@ -153,6 +159,10 @@ set_tests_properties(FilterListTests PROPERTIES
 # pool behind the decoder's and the encoder's bitstream buffers. Device-free.
 add_subdirectory(refcounted_pool)
 
+# logger_silence_test: LoggerSilenceScope, behind the encoder's silenceStdio, silences the Logger and gives
+# back its level. Device-free.
+add_subdirectory(logger_silence)
+
 # descriptor_layout_test: the immutable samplers VulkanDescriptorSetLayoutInfo
 # keeps for the compute filter's and the display's layouts. Device-free.
 add_subdirectory(descriptor_layout)
@@ -160,6 +170,11 @@ add_subdirectory(descriptor_layout)
 # command_buffer_pool_test: VulkanCommandBufferPool's nodes recorded on two
 # threads at once, under the validation layer's thread-safety check. GPU.
 add_subdirectory(command_buffer_pool)
+
+# filter_submit_test: filters and the device context's locked submitters
+# submitting to the same queues on several threads at once, under the
+# validation layer's thread-safety check. GPU.
+add_subdirectory(filter_submit)
 
 # validation_gate_fake_layer_output: cmake/validation_gate.cmake against canned
 # loader and layer output. Device-free.
@@ -186,4 +201,18 @@ if(WIN32)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/win32_opaque_import")
         add_subdirectory(win32_opaque_import)
     endif()
+endif()
+
+# SYNC_FD export test (Linux only): a SYNC_FD exported from a semaphore that a submission signals
+# becomes readable, on the graphics, compute, transfer, decode and encode queues, and after an
+# H.264 encode on the encode queue.
+if(UNIX AND NOT APPLE)
+    add_subdirectory(linux_sync_fd_export)
+endif()
+
+# Win32 semaphore interop test (Windows only): a semaphore shared through a Win32 handle carries
+# signals in both directions between the graphics, compute, transfer, decode and encode queues and a
+# second device, also after an H.264 encode on the encode queue.
+if(WIN32)
+    add_subdirectory(win32_semaphore_interop)
 endif()

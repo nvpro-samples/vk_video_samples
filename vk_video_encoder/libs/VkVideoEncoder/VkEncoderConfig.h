@@ -38,6 +38,7 @@
 #include "VkVideoEncoder/VkVideoEncoderHdrMetadata.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+#include "Logger.h"
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
@@ -175,7 +176,7 @@ public:
     bool VerifyInputs()
     {
         if ((width == 0) || (height == 0)) {
-            fprintf(stderr, "Invalid input width (%d) and/or height(%d) parameters!", width, height);
+            LOG_ERROR("Invalid input width (%d) and/or height(%d) parameters!", width, height);
             return false;
         }
 
@@ -188,7 +189,7 @@ public:
         // image for carrying the default 4:2:0 value it never uses.
         if (colorSpace == VkEncColorSpace::kRGB) {
             if (vkFormat == VK_FORMAT_UNDEFINED) {
-                fprintf(stderr, "Input marked RGBA but vkFormat is UNDEFINED!");
+                LOG_ERROR("Input marked RGBA but vkFormat is UNDEFINED!");
                 return false;
             }
             numPlanes = 1;
@@ -213,14 +214,14 @@ public:
         const bool isPackedSinglePlane = (numPlanes == 1);
         if (isPackedSinglePlane &&
             (chromaSubsampling != VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
-            fprintf(stderr, "Single-plane (packed) input requires --inputChromaSubsampling 444; "
+            LOG_ERROR("Single-plane (packed) input requires --inputChromaSubsampling 444; "
                             "packed 4:2:2 is not supported here.\n");
             return false;
         }
 
         uint32_t bytesPerPixel = isPackedSinglePlane ? 4u : ((bpp + 7) / 8);
         if (!isPackedSinglePlane && ((bytesPerPixel < 1) || (bytesPerPixel > 2))) {
-            fprintf(stderr, "Invalid input bpp (%d) parameter!", bpp);
+            LOG_ERROR("Invalid input bpp (%d) parameter!", bpp);
             return false;
         }
 
@@ -236,12 +237,14 @@ public:
                         planeStride = 0;
                         planeHeight = 0;
                         break;
+                    // A chroma row holds a whole sample for each pair of luma samples, the
+                    // last one covering a single luma sample at an odd width.
                     case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
-                        planeStride = (planeStride + 1) / 2;
+                        planeStride = bytesPerPixel * ((width + 1) / 2);
                         planeHeight = (planeHeight + 1) / 2;
                         break;
                     case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR:
-                        planeStride = (planeStride + 1) / 2;
+                        planeStride = bytesPerPixel * ((width + 1) / 2);
                         break;
                     case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR:
                     default:
@@ -276,7 +279,7 @@ public:
                                                         VkVideoCoreProfile::PlaneLayoutFromPlaneCount(numPlanes));
 
         if (vkFormat == VK_FORMAT_UNDEFINED) {
-            fprintf(stderr, "Invalid input parameters!");
+            LOG_ERROR("Invalid input parameters!");
             return false;
         }
 
@@ -314,7 +317,7 @@ public:
 
         if (m_fileHandle != nullptr) {
             if (fclose(m_fileHandle)) {
-                fprintf(stderr, "Failed to close input file %s", m_fileName);
+                LOG_ERROR("Failed to close input file %s", m_fileName);
             }
 
             m_fileHandle = nullptr;
@@ -544,7 +547,7 @@ beach:
 
         const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
         if (!(mappedLength >= (offset + m_frameSize))) {
-            printf("File overflow at fileOffset %lld\n", (long long unsigned int)offset);
+            LOG_INFO("File overflow at fileOffset %lld\n", (long long unsigned int)offset);
             assert(!"Input file overflow");
             return 0;
         }
@@ -559,28 +562,32 @@ beach:
     uint32_t SetFrameGeometry(uint32_t width, uint32_t height, uint8_t bpp,
                               VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling)
     {
-        uint8_t numBytes = (uint8_t)(bpp + 7) / 8;
-        double samplingFactor = 1.5; // Default for 420
+        const uint32_t numBytes = (bpp + 7) / 8;
+        // Each chroma plane of a subsampled frame has a whole sample for each pair of luma
+        // samples, the last one covering a single luma sample at an odd width or height.
+        const uint32_t halfWidth = (width + 1) / 2;
+        const uint32_t halfHeight = (height + 1) / 2;
+        uint32_t chromaSamples = 0;
         switch (chromaSubsampling)
         {
         case VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR:
-            samplingFactor = 1.0; // Only Y component
+            chromaSamples = 0;
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
-            samplingFactor = 1.5; // Y + 1/4 U + 1/4 V = 1.5
+            chromaSamples = halfWidth * halfHeight;
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR:
-            samplingFactor = 2.0; // Y + 1/2 U + 1/2 V = 2.0
+            chromaSamples = halfWidth * height;
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR:
-            samplingFactor = 3.0; // Full Y + full U + full V = 3.0
+            chromaSamples = width * height;
             break;
         default:
             assert(!"Unknown chroma subsampling");
             break;
         }
 
-        m_frameSize = (uint32_t)(width * height * numBytes * samplingFactor);
+        m_frameSize = (width * height + 2 * chromaSamples) * numBytes;
 
         m_currFrameOffset = 0;
 
@@ -607,21 +614,21 @@ private:
     {
         m_fileHandle = fopen(m_fileName, "rb");
         if (m_fileHandle == nullptr) {
-            fprintf(stderr, "Failed to open input file %s", m_fileName);
+            LOG_ERROR("Failed to open input file %s", m_fileName);
             return 0;
         }
 
         std::error_code error;
         m_memMapedFile.map(m_fileName, 0, mio::map_entire_file, error);
         if (error) {
-            fprintf(stderr, "Failed to map the input file %s", m_fileName);
+            LOG_ERROR("Failed to map the input file %s", m_fileName);
             const auto& errmsg = error.message();
-            std::printf("error mapping file: %s, exiting...\n", errmsg.c_str());
+            LOG_ERROR("mapping file: %s, exiting...\n", errmsg.c_str());
             return error.value();
         }
 
         if (m_verbose) {
-            printf("Input file size is: %zd\n", m_memMapedFile.length());
+            LOG_INFO("Input file size is: %zd\n", m_memMapedFile.length());
         }
 
         return m_memMapedFile.length();
@@ -676,7 +683,7 @@ public:
     {
         if (m_fileHandle != nullptr) {
             if(fclose(m_fileHandle)) {
-                fprintf(stderr, "Failed to close output file %s", m_fileName);
+                LOG_ERROR("Failed to close output file %s", m_fileName);
             }
 
             m_fileHandle = nullptr;
@@ -722,7 +729,7 @@ private:
     {
         m_fileHandle = fopen(m_fileName, "wb");
         if (m_fileHandle == nullptr) {
-            fprintf(stderr, "Failed to open output file %s", m_fileName);
+            LOG_ERROR("Failed to open output file %s", m_fileName);
             return 0;
         }
 
@@ -758,7 +765,7 @@ public:
 
         if (m_fileHandle != nullptr) {
             if(fclose(m_fileHandle)) {
-                fprintf(stderr, "Failed to close input file %s", m_fileName);
+                LOG_ERROR("Failed to close input file %s", m_fileName);
             }
 
             m_fileHandle = nullptr;
@@ -799,7 +806,7 @@ public:
 
         const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
         if (mappedLength < fileOffset) {
-            printf("File overflow at fileOffset %llu\n",  (unsigned long long int)fileOffset);
+            LOG_INFO("File overflow at fileOffset %llu\n",  (unsigned long long int)fileOffset);
             assert(!"Input file overflow");
             return nullptr;
         }
@@ -824,21 +831,21 @@ private:
     {
         m_fileHandle = fopen(m_fileName, "rb");
         if (m_fileHandle == nullptr) {
-            fprintf(stderr, "Failed to open input file %s", m_fileName);
+            LOG_ERROR("Failed to open input file %s", m_fileName);
             return 0;
         }
 
         std::error_code error;
         m_memMapedFile.map(m_fileName, 0, mio::map_entire_file, error);
         if (error) {
-            fprintf(stderr, "Failed to map the input file %s", m_fileName);
+            LOG_ERROR("Failed to map the input file %s", m_fileName);
             const auto& errmsg = error.message();
-            std::printf("error mapping file: %s, exiting...\n", errmsg.c_str());
+            LOG_ERROR("mapping file: %s, exiting...\n", errmsg.c_str());
             return error.value();
         }
 
         if (m_verbose) {
-            printf("Input file size is: %zd\n", m_memMapedFile.length());
+            LOG_INFO("Input file size is: %zd\n", m_memMapedFile.length());
         }
 
         return m_memMapedFile.length();
@@ -1124,8 +1131,8 @@ public:
 
     // CC-1: the matrix an UNNAMED colour description resolves to, derived
     // from the declared primaries. Static and public so the ext-filter suite
-    // can walk it as a table against the Chromium side's copy of the same
-    // rule. See the CC-1 block above ResolveRgbToYcbcrMatrix.
+    // can walk it as a table. See the CC-1 block above
+    // ResolveRgbToYcbcrMatrix.
     static uint8_t DeriveMatrixFromPrimaries(uint8_t primaries);
 
     // Signal the chroma siting the filter's 2x2 box average actually
@@ -1353,11 +1360,11 @@ public:
 
     virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {
-            std::cout << "Invalid parameters: ";
+            LOG_S_ERROR << "Invalid parameters: ";
             for (int i = 0; i < argc; i++) {
-                std::cout << argv[i] << " ";
+                LOG_S_INFO << argv[i] << " ";
             }
-            std::cout << std::endl;
+            LOG_S_INFO << std::endl;
         }
         return 0;
     };
@@ -1427,7 +1434,7 @@ public:
         // no PSNR comparison against the source can pass.
         if (allHighBitsClear && !allLowBitsClear) {
             if (verbose) {
-                printf("Input: %d-bit samples are LSB-aligned; msbShift=%d\n",
+                LOG_INFO("Input: %d-bit samples are LSB-aligned; msbShift=%d\n",
                        input.bpp, defaultShift);
             }
             return defaultShift;
@@ -1438,7 +1445,7 @@ public:
             // right-aligned -- whether or not the spare low bits happen to be clear.
             // Shifting could only overflow, so do not.
             if (verbose) {
-                printf("Input: %d-bit samples already occupy the high bits "
+                LOG_INFO("Input: %d-bit samples already occupy the high bits "
                        "(P010-style, low bits undefined); msbShift=0\n", input.bpp);
             }
             return 0;

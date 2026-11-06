@@ -15,9 +15,9 @@
 */
 
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <string>
 #include <cstdlib>
+#include "Logger.h"
 
 // Vulkan-Headers >= 1.4.360 added the High 10 and High 4:2:2 enumerators to
 // StdVideoH264ProfileIdc. Older SDKs (e.g. the 1.4.341 Windows SDK) stop at
@@ -42,18 +42,32 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
     for (int32_t i = 0; i < argc; i++) {
         if (args[i] == "--slices") {
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             char* end = nullptr;
             sliceCount = static_cast<int32_t>(strtol(args[i].c_str(), &end, 10));
             if (end == args[i].c_str()) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--maxNumRefFrames") {
+            if (++i >= argc) {
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            char* end = nullptr;
+            const long refs = strtol(args[i].c_str(), &end, 10);
+            if ((end == args[i].c_str()) || (*end != '\0') || (refs < 1) || (refs > 16)) {
+                LOG_ERROR("%s takes 1 to 16 reference frames, not %s\n", args[i - 1].c_str(), args[i].c_str());
+                return -1;
+            }
+            // Set before InitializeParameters(), whose level selection needs a DPB that holds them.
+            maxNumRefFramesOption = static_cast<uint8_t>(refs);
+            numRefFrames = maxNumRefFramesOption;
         } else if (args[i] == "--profile") {
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string profileStr = args[i];
@@ -68,11 +82,11 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
             } else if (profileStr == "high444" || profileStr == "3") {
                 profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
             } else {
-                VkEncPrintfErr("Invalid H.264 profile: %s\n", profileStr.c_str());
+                LOG_ERROR("Invalid H.264 profile: %s\n", profileStr.c_str());
                 return -1;
             }
         } else {
-            VkEncPrintfErr("Unrecognized option: %s\n", argv[i]);
+            LOG_ERROR("Unrecognized option: %s\n", argv[i]);
             return -1;
         }
     }
@@ -350,7 +364,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     sps->log2_max_frame_num_minus4 = 4;
     sps->log2_max_pic_order_cnt_lsb_minus4 = 4;
 
-    sps->max_num_ref_frames = numRefL0 + numRefL1;
+    sps->max_num_ref_frames = numRefFrames;
 
     // Initialize PPS values
     pps->seq_parameter_set_id = sps->seq_parameter_set_id;
@@ -458,22 +472,22 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  h264QuantizationMapCapabilities,
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode Capabilities for H264. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        VkEncOut() << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
-        VkEncOut() << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        VkEncOut() << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        VkEncOut() << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        VkEncOut() << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        VkEncOut() << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        VkEncOut() << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        VkEncOut() << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
-        VkEncOut() << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h264EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h264EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
     }
 
     result = VulkanVideoCapabilities::GetPhysicalDeviceVideoEncodeQualityLevelProperties<VkVideoEncodeH264QualityLevelPropertiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUALITY_LEVEL_PROPERTIES_KHR>
@@ -481,27 +495,27 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  qualityLevelProperties,
                                                                                  h264QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode QualityLevel Properties for H264. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlFlags : " << h264QualityLevelProperties.preferredRateControlFlags << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredGopFrameCount : " << h264QualityLevelProperties.preferredGopFrameCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredIdrPeriod : " << h264QualityLevelProperties.preferredIdrPeriod << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h264QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredTemporalLayerCount : " << h264QualityLevelProperties.preferredTemporalLayerCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpI : " << h264QualityLevelProperties.preferredConstantQp.qpI << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpP : " << h264QualityLevelProperties.preferredConstantQp.qpP << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpB : " << h264QualityLevelProperties.preferredConstantQp.qpB << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h264QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h264QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredStdEntropyCodingModeFlag : " << h264QualityLevelProperties.preferredStdEntropyCodingModeFlag << std::endl;
+        LOG_S_INFO << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlFlags : " << h264QualityLevelProperties.preferredRateControlFlags << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredGopFrameCount : " << h264QualityLevelProperties.preferredGopFrameCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredIdrPeriod : " << h264QualityLevelProperties.preferredIdrPeriod << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h264QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredTemporalLayerCount : " << h264QualityLevelProperties.preferredTemporalLayerCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQp.qpI : " << h264QualityLevelProperties.preferredConstantQp.qpI << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQp.qpP : " << h264QualityLevelProperties.preferredConstantQp.qpP << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQp.qpB : " << h264QualityLevelProperties.preferredConstantQp.qpB << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h264QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h264QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredStdEntropyCodingModeFlag : " << h264QualityLevelProperties.preferredStdEntropyCodingModeFlag << std::endl;
     }
 
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
@@ -553,7 +567,7 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (minQpSet &&
         ((EncoderConfig::minQp < h264EncodeCapabilities.minQp) ||
          (EncoderConfig::minQp > h264EncodeCapabilities.maxQp))) {
-        VkEncErr() << "[EncoderConfigH264] requested minQp "
+        LOG_S_ERROR << "[EncoderConfigH264] requested minQp "
                    << EncoderConfig::minQp
                    << " is outside the device QP window ["
                    << h264EncodeCapabilities.minQp << ", "
@@ -563,7 +577,7 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (maxQpSet &&
         ((EncoderConfig::maxQp < h264EncodeCapabilities.minQp) ||
          (EncoderConfig::maxQp > h264EncodeCapabilities.maxQp))) {
-        VkEncErr() << "[EncoderConfigH264] requested maxQp "
+        LOG_S_ERROR << "[EncoderConfigH264] requested maxQp "
                    << EncoderConfig::maxQp
                    << " is outside the device QP window ["
                    << h264EncodeCapabilities.minQp << ", "
@@ -572,7 +586,15 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     }
     numRefL0 = h264QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h264QualityLevelProperties.preferredMaxL1ReferenceCount;
-    numRefFrames = numRefL0 + numRefL1;
+    // The DPB keeps the frames the reference lists draw on: the device's preferred L0 and L1 counts,
+    // or more with --maxNumRefFrames.
+    numRefFrames = std::max<uint8_t>(maxNumRefFramesOption, static_cast<uint8_t>(numRefL0 + numRefL1));
+    if ((maxNumRefFramesOption != 0) && (numRefFrames != maxNumRefFramesOption)) {
+        LOG_S_INFO << "[EncoderConfigH264] --maxNumRefFrames " << static_cast<uint32_t>(maxNumRefFramesOption)
+                   << " is below the " << static_cast<uint32_t>(numRefFrames)
+                   << " reference frames of the device's preferred lists; keeping " << static_cast<uint32_t>(numRefFrames)
+                   << std::endl;
+    }
     // The device's preferred entropy coder, clamped to what the selected
     // profile permits.
     //
@@ -589,7 +611,7 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     entropyCodingMode = ConformantEntropyCodingMode(profileIdc, devicePreferred);
 
     if (entropyCodingMode != devicePreferred) {
-        VkEncOut() << "[EncoderConfigH264] H.264 Baseline (profile_idc "
+        LOG_S_INFO << "[EncoderConfigH264] H.264 Baseline (profile_idc "
                    << static_cast<uint32_t>(profileIdc)
                    << ") does not permit CABAC; encoding with CAVLC instead of "
                       "the device's preferred entropy coder, so that the "
@@ -605,7 +627,7 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
         // encode fails downstream carrying the driver's own error.
         if ((h264EncodeCapabilities.stdSyntaxFlags &
              VK_VIDEO_ENCODE_H264_STD_ENTROPY_CODING_MODE_FLAG_UNSET_BIT_KHR) == 0) {
-            VkEncErr() << "[EncoderConfigH264] the device does not advertise "
+            LOG_S_WARN << "[EncoderConfigH264] the device does not advertise "
                           "ENTROPY_CODING_MODE_FLAG_UNSET; CAVLC may be "
                           "unsupported here, in which case Baseline is not "
                           "encodable on this device." << std::endl;
@@ -711,8 +733,8 @@ void EncoderConfigH264::InitProfileLevel()
 int8_t EncoderConfigH264::InitDpbCount()
 {
     // Need-based DPB sizing: size the DPB by the references this encoder
-    // will actually use (numRefFrames = numRefL0 + numRefL1, populated from
-    // the driver's preferred quality-level properties) instead of leaving
+    // will actually use (numRefFrames: numRefL0 + numRefL1 from the driver's
+    // preferred quality-level properties, or --maxNumRefFrames) instead of leaving
     // dpbCount at 0, which selected the LEVEL-MAX DPB below -- 16+1 slots at
     // Level >= 5.0 for a sliding-window encode that uses ~3 references,
     // wasting ~12 full-resolution DPB images. If the quality-level query has

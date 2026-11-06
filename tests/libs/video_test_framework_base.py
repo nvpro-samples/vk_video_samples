@@ -640,6 +640,7 @@ class VulkanVideoTestFrameworkBase:
             str(decoder_path),
             "-i", str(input_file),
             "--verbose",
+            "--logLevel", str(4),
         ]
         # --enablePostProcessFilter takes a filter TYPE, not a boolean. The decoder's
         # default is -1, which disables the post-process pass; 0 is a legacy value that

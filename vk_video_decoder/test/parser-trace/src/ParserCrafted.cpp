@@ -118,6 +118,15 @@ class Checks {
         }
     }
 
+    // Whether the flags field of the occurrence-th line with the tag lists flag.
+    void Flag(const std::string& tag, const std::string& flag, bool expected, size_t occurrence = 0) {
+        const std::string flags = "|" + m_trace.Field(tag, "flags", occurrence) + "|";
+        if ((flags.find("|" + flag + "|") != std::string::npos) != expected) {
+            m_failures.push_back("'" + tag + "' line " + std::to_string(occurrence) + ": flag " + flag +
+                                 (expected ? " missing" : " set") + " in flags=" + flags.substr(1, flags.size() - 2));
+        }
+    }
+
     const std::vector<std::string>& Failures() const { return m_failures; }
 
    private:
@@ -416,13 +425,19 @@ struct H265Sps {
     std::function<void(BitWriter&)> longTermRefPics;
     // vui_parameters(), after a vui_parameters_present_flag of 1
     std::function<void(BitWriter&)> vui;
+    uint32_t chromaFormatIdc = 1;  // chroma_format_idc, 4:2:0
+    bool sao = false;              // sample_adaptive_offset_enabled_flag
 };
 
 std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
     BitWriter w;
     w.U(4, sps.vpsId).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
     H265ProfileTierLevel(w);
-    w.Ue(sps.id).Ue(1).Ue(64).Ue(64).Flag(false);                 // sps id, 4:2:0, width, height, conformance window
+    w.Ue(sps.id).Ue(sps.chromaFormatIdc);  // sps id, chroma_format_idc
+    if (sps.chromaFormatIdc == 3) {
+        w.Flag(false);  // separate_colour_plane_flag
+    }
+    w.Ue(64).Ue(64).Flag(false);                                  // width, height, conformance window
     w.Ue(0).Ue(0).Ue(sps.log2MaxPocLsbMinus4);                    // bit depths, log2_max_pic_order_cnt_lsb_minus4
     w.Flag(true).Ue(sps.maxDecPicBufferingMinus1);                // sub_layer_ordering_info: DPB size,
     w.Ue(sps.maxNumReorderPics).Ue(sps.maxLatencyIncreasePlus1);  // reorder and latency limits
@@ -432,7 +447,7 @@ std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
         w.Flag(!sps.scalingListDeltas.empty());  // sps_scaling_list_data_present_flag
         H265PredictedScalingLists(w, sps.scalingListDeltas);
     }
-    w.Flag(false).Flag(false).Flag(false);  // AMP, SAO, PCM
+    w.Flag(false).Flag(sps.sao).Flag(false);  // AMP, SAO, PCM
     if (sps.refPicSets) {
         sps.refPicSets(w);
     } else {
@@ -458,20 +473,25 @@ struct H265Pps {
     std::vector<uint64_t> scalingListDeltas;
     int64_t initQpMinus26 = 0;
     int64_t cbQpOffset = 0;
+    bool dependentSliceSegments = false;  // dependent_slice_segments_enabled_flag
+    bool entropyCodingSync = false;       // entropy_coding_sync_enabled_flag
+    bool sliceHeaderExtension = false;    // slice_segment_header_extension_present_flag
 };
 
 std::vector<uint8_t> H265PpsNal(const H265Pps& pps = H265Pps()) {
     const std::vector<uint64_t>& scalingListDeltas = pps.scalingListDeltas;
     BitWriter w;
-    w.Ue(pps.id).Ue(0).Flag(false).Flag(false).U(3, 0);           // ids, dependent slices, output flag, extra slice header bits
+    w.Ue(pps.id).Ue(0).Flag(pps.dependentSliceSegments);          // ids, dependent slices
+    w.Flag(false).U(3, 0);                                        // output flag, extra slice header bits
     w.Flag(false).Flag(false).Ue(0).Ue(0).Se(pps.initQpMinus26);  // sign hiding, cabac init, num_ref_idx defaults, init_qp
     w.Flag(false).Flag(false).Flag(false);                        // constrained intra, transform skip, cu_qp_delta
     w.Se(pps.cbQpOffset).Se(0).Flag(false);                       // cb and cr offsets, slice chroma offsets
     w.Flag(false).Flag(false).Flag(false);                        // weighted pred and bipred, transquant bypass
-    w.Flag(false).Flag(false).Flag(false);                        // tiles, entropy sync, loop filter across slices
+    w.Flag(false).Flag(pps.entropyCodingSync).Flag(false);        // tiles, entropy sync, loop filter across slices
     w.Flag(false).Flag(!scalingListDeltas.empty());               // deblocking control, pps_scaling_list_data_present_flag
     H265PredictedScalingLists(w, scalingListDeltas);
-    w.Flag(false).Ue(0).Flag(false).Flag(false);  // list modification, parallel merge level, header extension, extensions
+    w.Flag(false).Ue(0);                           // list modification, parallel merge level
+    w.Flag(pps.sliceHeaderExtension).Flag(false);  // slice segment header extension, extensions
     return AnnexBNal({0x44, 0x01}, w.TrailingBits().Data());
 }
 
@@ -535,11 +555,52 @@ std::vector<uint8_t> H265IntraSliceNal(uint8_t nalUnitType, uint32_t pocLsb) {
 // An end of sequence NAL unit: a header and no payload.
 std::vector<uint8_t> H265EndOfSequenceNal() { return AnnexBNal({0x48, 0x01}, {}); }
 
+// A slice segment of a picture whose PPS has entropy_coding_sync_enabled_flag and
+// slice_segment_header_extension_present_flag (Rec. ITU-T H.265 7.3.6.1), in the 64x64 picture of 16
+// coding tree blocks. At address 0, the first segment of an IDR_W_RADL I picture or of a TRAIL_R P
+// picture with picture order count LSB pocLsb and the SPS's first reference picture set; at another
+// address, a dependent segment (the PPS has dependent_slice_segments_enabled_flag), whose header has
+// after the address only the fields every segment has. Each ends with numEntryPoints entry points of
+// one byte and extensionLength bytes of slice header extension; its slice data is filler the parser
+// does not read.
+std::vector<uint8_t> H265WppSliceSegmentNal(bool idr, uint32_t pocLsb, uint32_t address, uint32_t numEntryPoints,
+                                            uint32_t extensionLength) {
+    BitWriter w;
+    w.Flag(address == 0);  // first_slice_segment_in_pic_flag
+    if (idr) {
+        w.Flag(false);  // no_output_of_prior_pics_flag
+    }
+    w.Ue(0);  // slice_pic_parameter_set_id
+    if (address != 0) {
+        w.Flag(true).U(4, address);  // dependent_slice_segment_flag, slice_segment_address
+    } else if (idr) {
+        w.Ue(2).Se(0);  // slice_type I, slice_qp_delta
+    } else {
+        w.Ue(1).U(8, pocLsb).Flag(true);  // slice_type P, slice_pic_order_cnt_lsb, short_term_ref_pic_set_sps_flag
+        w.Flag(false).Ue(0).Se(0);        // num_ref_idx_active_override_flag, merge candidates, slice_qp_delta
+    }
+    w.Ue(numEntryPoints);  // num_entry_point_offsets
+    if (numEntryPoints > 0) {
+        w.Ue(0);  // offset_len_minus1
+        for (uint32_t i = 0; i < numEntryPoints; i++) {
+            w.U(1, 0);  // entry_point_offset_minus1[i]
+        }
+    }
+    w.Ue(extensionLength);  // slice_segment_header_extension_length
+    for (uint32_t i = 0; i < extensionLength; i++) {
+        w.U(8, 0xA5);  // slice_segment_header_extension_data_byte
+    }
+    w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
+    return AnnexBNal({static_cast<uint8_t>(idr ? 0x26 : 0x02), 0x01}, w.Data());
+}
+
 // ---- AV1 (AV1 bitstream specification 5.5) ----
 
 // A temporal delimiter and a sequence header for 64x64 Main 8-bit 4:2:0 with timing info; the
-// timing info ends with numTicksPerPictureMinus1 as uvlc(). seqProfile is the profile it codes.
-std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bool filmGrain = false, uint32_t seqProfile = 0) {
+// timing info ends with numTicksPerPictureMinus1 as uvlc(). seqProfile is the profile it codes, and
+// restoration its enable_restoration.
+std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bool filmGrain = false, uint32_t seqProfile = 0,
+                                           bool restoration = false) {
     BitWriter w;
     w.U(3, seqProfile).Flag(false).Flag(false).Flag(true);           // seq_profile, still_picture, reduced header, timing info
     w.U(32, 1).U(32, 30).Flag(true).Uvlc(numTicksPerPictureMinus1);  // timing_info(), equal_picture_interval
@@ -549,7 +610,7 @@ std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bo
     w.Flag(false).Flag(false).Flag(false).Flag(false);               // interintra, masked compound, warped motion, dual filter
     w.Flag(true).Flag(false).Flag(false);                            // order hints, jnt_comp, ref_frame_mvs
     w.Flag(true).Flag(true).U(3, 6);                                 // screen content and integer mv SELECT, order_hint_bits 7
-    w.Flag(false).Flag(false).Flag(false);                           // superres, CDEF, restoration
+    w.Flag(false).Flag(false).Flag(restoration);                     // superres, CDEF, restoration
     w.Flag(false).Flag(false).Flag(false).Flag(false);               // color_config: 8-bit, not mono, no description, limited
     w.U(2, 0).Flag(false).Flag(filmGrain);                           // chroma_sample_position, separate_uv_delta_q, film grain
     std::vector<uint8_t> unit = Obu(2, {});                          // OBU_TEMPORAL_DELIMITER
@@ -557,18 +618,57 @@ std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bo
     return unit;
 }
 
+// The lr_params() (AV1 5.9.20) of a crafted AV1 frame, for a sequence header with
+// enable_restoration and 64x64 superblocks.
+struct Av1LoopRestorationSyntax {
+    uint32_t lrType[3];    // the coded lr_type of each plane: 0 none, 1 switchable, 2 Wiener, 3 self-guided
+    uint32_t lrUnitShift;  // 0, 1 or 2: lr_unit_shift, and lr_unit_extra_shift when it is 1
+    uint32_t lrUvShift;    // coded when a chroma plane uses loop restoration
+};
+
+// Writes lr_params() for a 4:2:0 sequence with 64x64 superblocks.
+void WriteAv1LoopRestoration(BitWriter& w, const Av1LoopRestorationSyntax& lr) {
+    for (uint32_t type : lr.lrType) {
+        w.U(2, type);  // lr_type
+    }
+    if ((lr.lrType[0] | lr.lrType[1] | lr.lrType[2]) == 0) {
+        return;
+    }
+    w.Flag(lr.lrUnitShift > 0);  // lr_unit_shift
+    if (lr.lrUnitShift > 0) {
+        w.Flag(lr.lrUnitShift > 1);  // lr_unit_extra_shift
+    }
+    if ((lr.lrType[1] | lr.lrType[2]) != 0) {
+        w.Flag(lr.lrUvShift != 0);  // lr_uv_shift
+    }
+}
+
 // A shown 64x64 key frame for the sequence header of Av1SequenceHeaderUnit with film grain, as an
 // OBU_FRAME of one tile, whose data is filler. Its film grain has numYPoints luma scaling points,
-// yStep apart.
-std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints, uint32_t yStep = 16) {
+// yStep apart. With lr, the sequence header has enable_restoration and the frame codes lr. With
+// intraBlockCopy, the frame allows screen content tools and intra block copy, and codes no loop
+// filter, CDEF or loop restoration syntax.
+std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints, uint32_t yStep = 16, const Av1LoopRestorationSyntax* lr = nullptr,
+                                    bool intraBlockCopy = false) {
     BitWriter w;
-    w.Flag(false).U(2, 0).Flag(true);   // show_existing_frame, KEY_FRAME, show_frame
-    w.Flag(false).Flag(false);          // disable_cdf_update, allow_screen_content_tools
+    w.Flag(false).U(2, 0).Flag(true);    // show_existing_frame, KEY_FRAME, show_frame
+    w.Flag(false).Flag(intraBlockCopy);  // disable_cdf_update, allow_screen_content_tools
+    if (intraBlockCopy) {
+        w.Flag(true);  // force_integer_mv
+    }
     w.Flag(false).U(7, 0).Flag(false);  // frame_size_override_flag, order_hint, render_and_frame_size_different
-    w.Flag(true).Flag(true);            // disable_frame_end_update_cdf, uniform_tile_spacing_flag
+    if (intraBlockCopy) {
+        w.Flag(true);  // allow_intrabc
+    }
+    w.Flag(true).Flag(true);                                     // disable_frame_end_update_cdf, uniform_tile_spacing_flag
     w.U(8, 60).Flag(false).Flag(false).Flag(false).Flag(false);  // base_q_idx, no delta_q, no qmatrix
     w.Flag(false).Flag(false);                                   // segmentation_enabled, delta_q_present
-    w.U(6, 0).U(6, 0).U(3, 0).Flag(false);                       // loop filter levels, sharpness, deltas
+    if (!intraBlockCopy) {
+        w.U(6, 0).U(6, 0).U(3, 0).Flag(false);  // loop filter levels, sharpness, deltas
+        if (lr != nullptr) {
+            WriteAv1LoopRestoration(w, *lr);
+        }
+    }
     w.Flag(false).Flag(false);                                   // tx_mode_select, reduced_tx_set
     w.Flag(true).U(16, 1234).U(4, numYPoints);                   // film_grain_params(): apply_grain, grain_seed, num_y_points
     for (uint32_t i = 0; i < numYPoints; i++) {
@@ -942,6 +1042,66 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("pic", 1);
              checks.Field("  hevc", "vps_video_parameter_set_id", "1");
              checks.Field("  hevc", "pps_update", "1");
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // A dependent slice segment's header (Rec. ITU-T H.265 7.3.6.1) has, after its address, only the
+        // fields every segment has: with wavefront parallel processing, num_entry_point_offsets, and here
+        // a slice header extension. The P picture is an independent segment and two dependent ones. The
+        // first dependent one has no entry points and 20 bytes of extension: read as the fields of an
+        // independent P segment, they are num_ref_idx_active_override_flag 1 and a
+        // num_ref_idx_l0_active_minus1 of 20, which no slice has. The second spans three rows of coding
+        // tree blocks, so two entry points. The client gets the picture's three segments, every byte.
+        {"H265DependentSliceSegments",
+         [](CaseContext& stream) {
+             const std::vector<uint8_t> independent = H265WppSliceSegmentNal(false, 1, 0, 0, 0);
+             const std::vector<uint8_t> extended = H265WppSliceSegmentNal(false, 1, 2, 0, 20);
+             const std::vector<uint8_t> threeRows = H265WppSliceSegmentNal(false, 1, 4, 2, 0);
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal());
+             Append(stream.byteStream,
+                    H265PpsNal({.dependentSliceSegments = true, .entropyCodingSync = true, .sliceHeaderExtension = true}));
+             Append(stream.byteStream, H265WppSliceSegmentNal(true, 0, 0, 3, 0));
+             Append(stream.byteStream, independent);
+             Append(stream.byteStream, extended);
+             Append(stream.byteStream, threeRows);
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 2);
+             checks.Field("pic", "numSlices", "1", 0);
+             checks.Field("pic", "numSlices", "3", 1);
+             // The picture's bytes run from the three-byte start code prefix of its first segment, after the
+             // zero byte of the four-byte start code the builders write, to the end of the stream.
+             const size_t pictureBytes = independent.size() + extended.size() + threeRows.size() - 1;
+             checks.Field("pic", "bitstreamDataLen", std::to_string(pictureBytes), 1);
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // slice_sao_chroma_flag is present only when ChromaArrayType is not 0 (Rec. ITU-T H.265 7.3.6.1). In a
+        // 4:0:0 sequence with SAO, a P slice overrides num_ref_idx_l0_active_minus1 with 0, and the bits after
+        // it are a five_minus_max_num_merge_cand of 100. Read with a chroma flag, the override flag would be
+        // the count's bit and the count 100, which no slice has.
+        {"H265MonochromeSaoSliceHeader",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal({.chromaFormatIdc = 0, .sao = true}));
+             Append(stream.byteStream, H265PpsNal());
+             BitWriter idr;
+             idr.Flag(true).Flag(false).Ue(0).Ue(2);  // first slice, no_output_of_prior_pics, pps id, slice_type I
+             idr.Flag(true).Se(0);                    // slice_sao_luma_flag, slice_qp_delta
+             idr.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});
+             Append(stream.byteStream, AnnexBNal({0x26, 0x01}, idr.Data()));
+             BitWriter p;
+             p.Flag(true).Ue(0).Ue(1);  // first slice, pps id, slice_type P
+             p.U(8, 1).Flag(true);      // slice_pic_order_cnt_lsb, short_term_ref_pic_set_sps_flag
+             p.Flag(true);              // slice_sao_luma_flag
+             p.Flag(true).Ue(0);        // num_ref_idx_active_override_flag, num_ref_idx_l0_active_minus1
+             p.Ue(100).Se(0);           // five_minus_max_num_merge_cand, slice_qp_delta
+             p.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});
+             Append(stream.byteStream, AnnexBNal({0x02, 0x01}, p.Data()));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 2);
              checks.Count("refused", 0);
              return checks.Failures();
          }},
@@ -1447,6 +1607,69 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("  av1", "frame_width", "64", 1);
              checks.Count("pkt-error", 0);
              checks.Field("refused", "units", "1");
+             return checks.Failures();
+         }},
+        // lr_params() (AV1 5.9.20) codes the luma restoration unit as lr_unit_shift, 64, 128 or 256
+        // samples with 64x64 superblocks, and both chroma units lr_uv_shift smaller; Vulkan takes each
+        // LoopRestorationSize as log2 of the unit size minus 5. Key frames with each luma unit and
+        // chroma units of half its size, one with chroma units of its size, and one without chroma
+        // restoration, which codes no lr_uv_shift.
+        {"Av1LoopRestorationUnitSizes",
+         [](CaseContext& stream) {
+             const Av1LoopRestorationSyntax frames[] = {
+                 {{1, 2, 3}, 0, 1}, {{1, 2, 3}, 1, 1}, {{2, 3, 1}, 2, 1}, {{3, 0, 2}, 2, 0}, {{3, 0, 0}, 1, 0},
+             };
+             const char* const sizes[] = {"[1,0,0]", "[2,1,1]", "[3,2,2]", "[3,3,3]", "[2,2,2]"};
+             const char* const types[] = {"[3,1,2]", "[3,1,2]", "[1,2,3]", "[2,0,1]", "[2,0,0]"};
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true, 0, true);
+             int64_t pts = 0;
+             for (const Av1LoopRestorationSyntax& lr : frames) {
+                 Append(unit, Av1KeyFrameObu(1, 16, &lr));
+                 stream.packets.push_back({unit, pts++});
+                 unit = Obu(2, {});
+             }
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 5);
+             for (size_t i = 0; i < 5; i++) {
+                 checks.Field("  lr", "FrameRestorationType", types[i], i);
+                 checks.Field("  lr", "LoopRestorationSize", sizes[i], i);
+             }
+             checks.Count("pkt-error", 0);
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // UsesLr and usesChromaLr tell whether a frame restores any plane and a chroma plane (AV1
+        // 5.9.20). A frame that codes no lr_params(), here a key frame with intra block copy after one
+        // that restores every plane, restores none. Then a key frame that restores luma only.
+        {"Av1LoopRestorationFlags",
+         [](CaseContext& stream) {
+             const Av1LoopRestorationSyntax chroma = {{1, 2, 3}, 1, 1};
+             const Av1LoopRestorationSyntax luma = {{3, 0, 0}, 1, 0};
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true, 0, true);
+             Append(unit, Av1KeyFrameObu(1, 16, &chroma));
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1, 16, nullptr, true));
+             stream.packets.push_back({unit, 1});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1, 16, &luma));
+             stream.packets.push_back({unit, 2});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 3);
+             checks.Field("  lr", "FrameRestorationType", "[3,1,2]", 0);
+             checks.Flag("  std", "UsesLr", true, 0);
+             checks.Flag("  std", "usesChromaLr", true, 0);
+             checks.Flag("  std", "allow_intrabc", true, 1);
+             checks.Field("  lr", "FrameRestorationType", "[0,0,0]", 1);
+             checks.Flag("  std", "UsesLr", false, 1);
+             checks.Flag("  std", "usesChromaLr", false, 1);
+             checks.Field("  lr", "FrameRestorationType", "[2,0,0]", 2);
+             checks.Flag("  std", "UsesLr", true, 2);
+             checks.Flag("  std", "usesChromaLr", false, 2);
+             checks.Count("pkt-error", 0);
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most

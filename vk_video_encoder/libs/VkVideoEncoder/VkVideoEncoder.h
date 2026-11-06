@@ -21,6 +21,7 @@
 #include <deque>
 #include <thread>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
@@ -33,12 +34,9 @@
 #include "VkCodecUtils/VulkanBufferPool.h"
 #include "VkCodecUtils/VulkanCommandBufferPool.h"
 #include "VkCodecUtils/VulkanVideoReferenceCountedPool.h"
-#include "VkVideoEncoder/VkVideoEncoderContentProbe.h"
 #include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/VulkanBistreamBufferImpl.h"
 #include "VkCodecUtils/VkThreadSafeQueue.h"
-#include "VkEncoderDpbH264.h"
-#include "VkEncoderDpbAV1.h"
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "VkCodecUtils/VulkanVideoEncodeDisplayQueue.h"
 #include "VkShell/Shell.h"
@@ -57,112 +55,6 @@ class VkVideoEncoderAV1;
 class VkVideoEncoder : public VkVideoRefCountBase {
 
 public:
-
-    // ------------------------------------------------------------------
-    // FILTER-DISPATCH OBSERVABLE
-    //
-    // What ACTUALLY ran, readable from outside the library. The session's
-    // input format says whether a filter was BUILT; it does not say what
-    // happened to any given frame. A session that has a filter can still
-    // route every frame down the staging copy -- StageInputFrame's
-    // `useComputeFilter` is a PER-FRAME predicate, not a session property --
-    // and the copy arm is exactly the arm that hangs the GPU on a 3-plane
-    // source, so "did the filter run" cannot be inferred from the config.
-    //
-    // Counted at the RECORD SITE, immediately after
-    // VulkanFilter::RecordCommandBuffer() returns VK_SUCCESS, which is the
-    // same site the hardware proof of this filter counted at. A filter that
-    // failed to record does not count.
-    //
-    // BOTH ARMS ARE COUNTED SEPARATELY, on purpose. A single total plus a
-    // subtraction is how a live tier already read as dead once on this
-    // project (staging_frames_submitted_ is a superset of the cpu-dmabuf
-    // count). These two never overlap: they are the two sides of one `if`.
-    //
-    // The counters are cumulative for the life of the encoder object and
-    // are NOT reset by DeinitEncoder(), matching the diagnostic channel's
-    // documented "never resets" rule -- a teardown-time read is the one
-    // most likely to matter.
-    enum InputFilterKind {
-        INPUT_FILTER_NONE          = 0,
-        INPUT_FILTER_YCBCR_COPY    = 1,  // VulkanFilterYuvCompute::YCBCRCOPY
-        INPUT_FILTER_RGBA_TO_YCBCR = 2,  // VulkanFilterYuvCompute::RGBA2YCBCR
-        INPUT_FILTER_YCBCR_TO_RGBA = 3,  // VulkanFilterYuvCompute::YCBCR2RGBA
-    };
-
-    // The filter OBJECT exists on this session. Deliberately distinct from
-    // the config flag: InitEncoder hard-fails when those two can diverge,
-    // and this is what proves that hard-fail is holding.
-    bool HasInputComputeFilter() const {
-#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
-        return (m_inputComputeFilter != nullptr);
-#else
-        return false;
-#endif
-    }
-    uint32_t GetInputFilterKind() const {
-        return m_inputFilterKind.load(std::memory_order_relaxed);
-    }
-    uint64_t GetInputFilterDispatchCount() const {
-        return m_inputFilterDispatchCount.load(std::memory_order_relaxed);
-    }
-    uint64_t GetStagedCopyCount() const {
-        return m_stagedCopyCount.load(std::memory_order_relaxed);
-    }
-    // The dma-buf import content probe, INJECTED by the ext layer -- see the
-    // note on m_contentProbe for why it is not owned here. Null on a session
-    // whose caller never opted in, and inert (allocating no device memory)
-    // until a capture is actually recorded.
-    const VkSharedBaseObj<VkVideoEncoderContentProbe>& GetContentProbe() const {
-        return m_contentProbe;
-    }
-    // Idempotent. Safe to call before or after InitEncoder: whichever runs
-    // second performs the Configure, so the ext layer does not have to know
-    // which order CreateVideoEncoder left things in.
-    void SetContentProbe(const VkSharedBaseObj<VkVideoEncoderContentProbe>& probe) {
-        m_contentProbe = probe;
-        ConfigureContentProbe();
-    }
-    // The two sides of the staging ACQUIRE decision, reported through
-    // VkVideoEncoderInputResidencyInfo in vulkan_video_encoder_ext_internal.h.
-    // See it for why a validation count cannot substitute for these: both
-    // barrier programs are spec-clean and leave the image in the same layout.
-    uint64_t GetForeignAcquireCount() const {
-        return m_foreignAcquireCount.load(std::memory_order_relaxed);
-    }
-    uint64_t GetLocalAcquireCount() const {
-        return m_localAcquireCount.load(std::memory_order_relaxed);
-    }
-
-    // THE STAGED-INPUT SUBMIT FAMILY, reported through
-    // VkVideoEncoderInputResidencyInfo in vulkan_video_encoder_ext_internal.h.
-    // Public wrappers over the two
-    // protected accessors declared further down (GetStagedInputSubmitType /
-    // GetStagedInputQueueFamilyIdx) so an out-of-library caller can read the
-    // fact those two exist to keep in agreement, WITHOUT re-deriving it.
-    //
-    // WHY THIS IS OBSERVABLE AT ALL, stated here because "it encoded" is not
-    // the question these answer. GetStagedInputSubmitType() returns COMPUTE
-    // whenever a preprocess filter OBJECT exists on the session -- a session
-    // property, not a per-frame one -- so a frame that dispatches NO filter
-    // and takes the plain-copy arm still has its acquire, its
-    // ReleaseImageToForeignQueue and its submit moved onto the compute family
-    // the moment the session gains a filter. Whether that move happened is
-    // invisible in a bitstream, invisible in a byte count, and invisible to
-    // the validation layer. It is exactly the fact that has to be read to
-    // know whether widening a session's declared input format moved the NV12
-    // lane off the encode engine, which matters because a FOREIGN release
-    // recorded off the wrong engine can lose the device (see
-    // ReleaseImageToForeignQueue).
-    //
-    // Returned as the raw VK_QUEUE_* flag bit rather than the internal enum
-    // so no ext-layer translation table can drift from it.
-    uint32_t GetStagedInputSubmitTypeFlag() const {
-        return (uint32_t)GetStagedInputSubmitType();
-    }
-    uint32_t GetStagedInputSubmitQueueFamilyIdx() const {
-        return GetStagedInputQueueFamilyIdx();
-    }
 
     using VulkanBitstreamBufferPool = VulkanVideoRefCountedPool<VulkanBitstreamBufferImpl, 64>;
 
@@ -257,6 +149,21 @@ public:
     static_assert(SYNC_PROCESSING_STATE_COUNT <= (1ULL << SEM_SYNC_TYPE_IDX_SHIFT),
                   "AQ_SYNC_STATE_COUNT must be <= 1 << SEM_SYNC_TYPE_IDX_SHIFT");
 
+    // What the caller of a SetExternalInputFrame* call needs to know, after the call returns, about that
+    // frame's staging copy: whether vkQueueSubmit accepted it, and the semaphore it signals once it has read
+    // the caller's input image.
+    //
+    // The command-buffer nodes of the frame cannot tell it. The call queues the frame for assembly before it
+    // returns, and from then on an assembly worker can complete the frame and Reset() its node, clearing
+    // inputCmdBuffer while the caller reads it. The caller creates this record, hands the frame a reference
+    // and keeps its own; the staging submit writes stagingCompleteSemaphore first and then sets issued with
+    // release ordering, so a caller that reads issued == true with acquire ordering also sees the semaphore.
+    // A direct encode has no staging copy and leaves the record unset.
+    struct InputSubmitRecord {
+        std::atomic<bool> issued{false};
+        VkSemaphore       stagingCompleteSemaphore = VK_NULL_HANDLE;
+    };
+
     struct VkVideoEncodeFrameInfo : public VkVideoRefCountBase
     {
         inline VkVideoCodecOperationFlagBitsKHR GetType() const {
@@ -286,6 +193,8 @@ public:
             , sendRateControlCmd(false)
             , lastFrame(false)
             , numDpbImageResources()
+            , beginCodingReferenceSlotCount()
+            , pBeginCodingReferenceSlots(nullptr)
             , controlCmd()
             , pControlCmdChain(nullptr)
             , qualityLevelInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR }
@@ -345,6 +254,10 @@ public:
         uint32_t                                           sendRateControlCmd  : 1;
         uint32_t                                           lastFrame           : 1;
         uint32_t                                           numDpbImageResources;
+        // The slots vkCmdBeginVideoCodingKHR binds, when the codec's DPB gives them; otherwise the setup
+        // slot is referenceSlotsInfo[0], ahead of the references.
+        uint32_t                                           beginCodingReferenceSlotCount;
+        const VkVideoReferenceSlotInfoKHR*                 pBeginCodingReferenceSlots;
         VkVideoCodingControlFlagsKHR                       controlCmd;
         VkBaseInStructure *                                pControlCmdChain;
         VkVideoEncodeQualityLevelInfoKHR                   qualityLevelInfo;
@@ -366,21 +279,20 @@ public:
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> inputCmdBuffer;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> encodeCmdBuffer;
         VkSharedBaseObj<VkVideoEncodeFrameInfo>            dependantFrames;
+        /** Filled when vkQueueSubmit accepts this frame's staging copy. The caller keeps its own reference
+         *  (see InputSubmitRecord); Reset() drops only this node's. */
+        std::shared_ptr<InputSubmitRecord>                 inputSubmitRecord;
 
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapImageResource;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> qpMapCmdBuffer;
         /** Per-frame PSNR capture/recon data (only used when PSNR is enabled). */
         VkVideoEncoderPsnr::FrameData                      psnrFrameData;
-        /** The dma-buf import content probe's readback for THIS frame, held
-         *  from the record site in StageInputFrame to the post-fence score.
-         *  Empty on all but the first frame of an armed registration. */
-        VkVideoEncoderContentProbe::FrameCapture           contentProbeCapture;
-        /** The registration this frame was submitted against, 0 for the
-         *  unregistered (legacy direct-image) arm. Carried because the
-         *  content probe's unit is the REGISTRATION, not the frame: it is
-         *  what latches "this buffer has already been looked at". */
-        uint64_t                                           externalRegistrationId = 0;
+        /** The owner of an input image the ext layer imported for THIS
+         *  frame, or null. Released by Reset(true) after the frame's command
+         *  buffers have completed and after the views over the image, so
+         *  the image outlives every submission that reads it. */
+        VkSharedBaseObj<VkVideoRefCountBase>               externalInputOwner;
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
         std::shared_ptr<AqProcessor>                       aqProcessorSlot;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
@@ -395,25 +307,6 @@ public:
 
         bool           isExternalInput{false};
         VkImageLayout  srcExternalImageLayout{VK_IMAGE_LAYOUT_UNDEFINED};
-
-        // Did the CALLER state srcExternalImageLayout for THIS FRAME, or is
-        // it the registration-time default standing in?
-        //
-        // The public contract makes the distinction, and the encoder core
-        // cannot see it unaided: VkVideoEncoderFrameSubmitInfo::
-        // currentLayout is documented as "the layout the producer left the
-        // image in. VK_IMAGE_LAYOUT_UNDEFINED means 'as declared at
-        // registration'", and the ext layer collapses both cases into one
-        // value before calling down here. An EXPLICIT per-frame declaration
-        // is the caller saying "I moved it", and it must beat the library's
-        // own record of where it last left the image
-        // (VulkanVideoImagePoolNode::GetStagedInputResidualLayout).
-        //
-        // false on the LEGACY SubmitExternalFrame lane and on the library's
-        // own file-input lane, neither of which has a registration default
-        // to stand in for -- and neither of which reads the residual either,
-        // so the value is inert there.
-        bool           srcExternalLayoutIsExplicit{false};
 
         // True when srcEncodeImageResource IS the caller's imported image
         // (Path A, zero-copy) rather than a library pool image that a staging
@@ -466,18 +359,12 @@ public:
         VkImageLayout  srcEncodeImageStagedLayout{VK_IMAGE_LAYOUT_MAX_ENUM};
 
         // ROUTING INTENT for this frame: does its input need the preprocess
-        // compute filter to become encodable? Decided by whichever
-        // SetExternalInputFrame* entry point admitted the frame -- from the
-        // registration's resolved input path on the registered arm, from the
-        // frame's own format on the legacy arm -- and read by
-        // StageInputFrame. Per FRAME, not per session: with one session,
-        // registrations in the session's encode format take the direct path
-        // and registrations in its filter-input format take the filter, and
-        // the blanket "external input never filters" predicate this replaces
-        // could express neither.
+        // compute filter to become encodable? Decided by SetExternalInputFrame
+        // from the frame's own format, and read by StageInputFrame. Per
+        // FRAME, not per session.
         //
         // Never true for a file-input frame; those reach the filter through
-        // the session-level enablePreprocessComputeFilter as they always did.
+        // the session-level enablePreprocessComputeFilter.
         bool           externalInputViaFilter{false};
 
         // WHAT ACTUALLY RAN, written by StageInputFrame after it has taken a
@@ -559,7 +446,6 @@ public:
 
         void ClearExternalInputSync() {
             isExternalInput = false;
-            srcExternalLayoutIsExplicit = false;
             srcEncodeImageIsExternal = false;
             // Cleared with the rest of the per-frame input state, so a pool
             // node recycled from a staged frame into a non-staged role (a
@@ -690,6 +576,8 @@ public:
             assert(encodeInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR);
 
             encodeInfo.pNext = nullptr;
+            beginCodingReferenceSlotCount = 0;
+            pBeginCodingReferenceSlots = nullptr;
 
             if ((frameInputOrderNum == (uint64_t)-1) &&
                 (frameEncodeInputOrderNum == (uint64_t)-1) &&
@@ -737,6 +625,7 @@ public:
                 videoSessionParameters = nullptr;
                 srcStagingImageView = nullptr;
                 srcEncodeImageResource = nullptr;
+                externalInputOwner = nullptr;
                 setupImageResource = nullptr;
                 // A frame's quantization map belongs to that frame: a recycled node takes
                 // (and fills) a new one, from the map file or from the NVIDIA AQ map library.
@@ -753,6 +642,7 @@ public:
                 inputCmdBuffer = nullptr;
                 qpMapCmdBuffer = nullptr;
                 encodeCmdBuffer = nullptr;
+                inputSubmitRecord = nullptr;
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
                 aqProcessorSlot = nullptr;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
@@ -875,10 +765,7 @@ public:
         , m_streamBufferSize(m_minStreamBufferSize)
         , m_rateControlInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
         , m_rateControlLayersInfo{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }}
-        , m_picIdxToDpb{}
         , m_gopState()
-        , m_dpbSlotsMask(0)
-        , m_frameNumSyntax(0)
         , m_frameNumInGop()
         , m_IDRPicId(0)
         , m_videoMaintenance1FeaturesSupported(false)
@@ -891,7 +778,6 @@ public:
         , m_useSeparateOutputImages(false)
         , m_useLinearInput(false)
         , m_resetEncoder(false)
-        , m_enableEncoderThreadQueue(false)
         , m_verbose(false)
         , m_numDeferredFrames()
         , m_numDeferredRefFrames()
@@ -966,9 +852,10 @@ public:
         return (size_t)((cycle > 0) ? cycle : 1u);
     }
 
-    // Create the completion timeline semaphore (ext currency 3; idempotent).
-    // Called by the ext layer at initialization, on the session-serial
-    // thread, before any submit. Exportability is a physical-device
+    // Create the completion timeline semaphore (idempotent). Called by the
+    // ext layer at initialization, on the session-serial thread, before any
+    // submit; its contract is VulkanVideoEncoderExt::
+    // GetCompletionTimelineSemaphore. Exportability is a physical-device
     // property, queried rather than assumed; when the answer is no, the
     // semaphore is created plain and export is refused by type at the ext
     // layer.
@@ -1030,57 +917,8 @@ public:
         const VkSemaphore* pSignalSemaphores,
         const uint64_t* pSignalSemaphoreValues);
 
-    // Registered-path twin of SetExternalInputFrame: the wrap already
-    // happened, once, at registration (see the ext layer's
-    // BuildRegisteredViewLocked). Performs the same bookkeeping and routing
-    // but creates NO Vulkan object and NO wrapper: |node| is shared by
-    // every frame of its registration and is read-only on the encode path
-    // (GetPictureResourceInfo / GetImageView are the only consumers).
-    // |directlyEncodable| is the registration-time routing predicate
-    // (encodable format, non-LINEAR tiling, encode-capable usage),
-    // replacing the legacy arm's per-frame tiling check.
-    VkResult SetExternalInputFrameWithNode(
-        VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-        VkSharedBaseObj<VulkanVideoImagePoolNode>& node,
-        // The registration id this frame names, purely so the staging arm can
-        // tell the content probe WHICH BUFFER it is looking at. 0 means "not
-        // a registered submit", which the probe treats as never-armed.
-        uint64_t registrationId,
-        bool directlyEncodable,
-        // The registration's resolved rung of the adaptation ladder, for the
-        // frames |directlyEncodable| refuses: true routes the staged frame
-        // through the preprocess compute filter, false through the transfer
-        // copy. Decided once at registration by the layer that knows the
-        // descriptor's format and the session's, and passed down rather than
-        // re-derived here, so routing and the registration's reported input
-        // path cannot disagree.
-        bool routeViaFilter,
-        VkImageLayout srcImageCurrentLayout,
-        // True when |srcImageCurrentLayout| came from the FRAME's own
-        // currentLayout field and false when it is the registration's
-        // defaultLayout standing in. Only the ext layer can tell those
-        // apart -- it is the one that applies the UNDEFINED sentinel -- so
-        // it is passed down rather than re-derived. Decides whether the
-        // staged-input acquire may prefer the library's own residual
-        // record over the declaration.
-        bool srcLayoutIsExplicit,
-        uint64_t frameId,
-        uint64_t pts,
-        bool isLastFrame,
-        bool forceIdr,
-        int32_t qpOverride,
-        ExternalInputResidency residency,
-        uint32_t waitSemaphoreCount,
-        const VkSemaphore* pWaitSemaphores,
-        const uint64_t* pWaitSemaphoreValues,
-        const VkPipelineStageFlags2* pWaitDstStageMasks,
-        uint32_t signalSemaphoreCount,
-        const VkSemaphore* pSignalSemaphores,
-        const uint64_t* pSignalSemaphoreValues);
-
-    // Shared bookkeeping of the two external-input entry points (the
-    // "replicate LoadNextFrame" and "store external sync info" sections),
-    // factored so the legacy and registered arms cannot drift.
+    // Shared bookkeeping of the external-input entry point (the
+    // "replicate LoadNextFrame" and "store external sync info" sections).
     void StampExternalFrameInfo(
         VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
         VkImageLayout srcImageCurrentLayout,
@@ -1098,10 +936,8 @@ public:
         const VkSemaphore* pSignalSemaphores,
         const uint64_t* pSignalSemaphoreValues);
 
-    // Helper: wrap an external VkImage as a VulkanVideoImagePoolNode.
-    // Legacy per-frame wrap for SubmitExternalFrame only; registered
-    // submissions carry a node built once at registration. Slated for
-    // removal with the M5 consumer migration.
+    // Helper: wrap an external VkImage as a VulkanVideoImagePoolNode, once
+    // per frame, for SubmitExternalFrame.
     VkResult WrapExternalImage(
         VkImage image, VkDeviceMemory memory,
         VkFormat format, uint32_t width, uint32_t height,
@@ -1421,30 +1257,15 @@ protected:
                                         uint32_t dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                         uint32_t baseArrayLayer = 0);
 
-    // Local patch; not in upstream vk_video_samples.
-    //
     // The RELEASE half of the FOREIGN_EXT ownership transfers the acquire
     // sites perform. Deliberately NOT TransitionImageLayout:
     //
     //  (a) That function picks its four barrier masks from an
-    //      (oldLayout,newLayout) if/else chain, and an unhandled pair still
-    //      gets a barrier -- now a deliberate ALL_COMMANDS/MEMORY_* fallback
-    //      with a loud diagnostic, rather than the struct defaults.
-    //
-    //      THIS SUB-ARGUMENT USED TO REST ON A BUILD DIVERGENCE THAT NO
-    //      LONGER EXISTS, and is corrected here rather than quietly left to
-    //      rot. The chain's final else was
-    //      `#ifdef __cpp_exceptions throw ... #endif`, which meant the
-    //      standalone CMake build (exceptions ON) terminated on an unhandled
-    //      pair while Chromium's -fno-exceptions build silently kept the
-    //      defaults -- so a ctest could not reproduce the shipping failure
-    //      mode. Both halves were replaced by one total fallback that behaves
-    //      identically in both builds, so that particular reason to avoid
-    //      this table is gone.
-    //
-    //      What survives, and is why this helper still exists: the fallback
-    //      is correct-but-conservative for an ACQUIRE and still not right for
-    //      a RELEASE, for reason (b) below.
+    //      (oldLayout,newLayout) if/else chain, and an unhandled pair gets a
+    //      deliberate ALL_COMMANDS/MEMORY_* fallback with a loud diagnostic,
+    //      the same with or without exceptions. That fallback is
+    //      correct-but-conservative for an ACQUIRE and still not right for a
+    //      RELEASE, for reason (b) below.
     //  (b) For a RELEASE the spec USES srcStageMask/srcAccessMask and
     //      IGNORES the dst pair -- the exact inverse of an acquire. So the
     //      defaults that let an unhandled ACQUIRE survive by luck turn an
@@ -1573,9 +1394,6 @@ public:
         for (auto& t : m_assemblyThreads) {
             if (t.joinable()) t.join();
         }
-        if (m_encoderQueueConsumerThread.joinable()) {
-            m_encoderQueueConsumerThread.join();
-        }
     }
 
     int32_t DeinitEncoder();
@@ -1642,10 +1460,9 @@ public:
 
         InsertOrdered(encodeFrameInfo, isReferenceFrame);
 
-        // Local patch; not in upstream vk_video_samples.
         // Flush per-frame when there is no B-frame reordering. The deferred-GOP
         // queue is otherwise drained only on lastFrame / IDR-preflush / a full
-        // reference window. A Chromium stream never signals lastFrame, and with
+        // reference window. A live stream may never signal lastFrame, and with
         // consecutiveBFrames=0 no reordering is needed, so without this trigger
         // every frame piles into m_lastDeferredFrame, the encode-image pool
         // exhausts (~m_holdRefFramesInQueue), RecordVideoCodingCmd never runs, and
@@ -1668,8 +1485,6 @@ public:
         }
         return result;
     }
-
-    void ConsumerThread();
 
     // Insert frames in order from the reference frame first and B frames next in the list.
     // Uses a simple ordering for now where B frame as reference are not supported yet.
@@ -1726,7 +1541,6 @@ public:
         uint64_t sequenceNumber;
         BitstreamReadback readback;
     };
-    typedef VkThreadSafeQueue<VkSharedBaseObj<VkVideoEncodeFrameInfo>> EncoderFrameQueue;
     typedef VkThreadSafeQueue<AssemblyWorkItem> AssemblyQueue;
 
     void AssemblyWorkerThread(int threadId);
@@ -1858,10 +1672,7 @@ protected:
     std::mutex               m_pendingRateControlMutex;
     bool                     m_pendingRateControlArmed = false;
     PendingRateControlUpdate m_pendingRateControlUpdate = {};
-    int8_t   m_picIdxToDpb[17]; // MAX_DPB_SLOTS + 1
     VkVideoGopStructure::GopState         m_gopState;
-    uint32_t m_dpbSlotsMask;
-    uint32_t m_frameNumSyntax;
     uint32_t m_frameNumInGop;
     uint32_t m_IDRPicId;
     uint32_t m_videoMaintenance1FeaturesSupported : 1;
@@ -1874,7 +1685,6 @@ protected:
     uint32_t m_useSeparateOutputImages : 1;
     uint32_t m_useLinearInput : 1;
     uint32_t m_resetEncoder : 1;
-    uint32_t m_enableEncoderThreadQueue : 1;
     uint32_t m_verbose : 1;
     uint32_t                                 m_numDeferredFrames;
     uint32_t                                 m_numDeferredRefFrames;
@@ -1909,33 +1719,6 @@ protected:
     uint64_t                                 m_timestampMask = ~0ULL;
     std::mutex                               m_encodeTimingMutex;
     std::vector<double>                      m_encodeGpuTimesMs;
-    // Filter-dispatch observable; see the accessors at the top of the class.
-    // Declared OUTSIDE the compute-filter ifdef so the member layout of this
-    // class does not depend on that macro -- the counters simply stay 0 in a
-    // build with no filter, which is the honest answer there.
-    //
-    // Atomic because the recording site runs on whatever thread drives
-    // EncodeFrame while GetCompletionInfo() is documented threading class
-    // (c) -- callable concurrently. Relaxed ordering: these are counters
-    // read for reporting, and they order nothing.
-    std::atomic<uint32_t>                    m_inputFilterKind{0};
-    std::atomic<uint64_t>                    m_inputFilterDispatchCount{0};
-    std::atomic<uint64_t>                    m_stagedCopyCount{0};
-    // Atomic and relaxed for the same reason the three counters above are:
-    // written on whatever thread drives EncodeFrame, read by
-    // GetCompletionInfo() which is documented threading class (c).
-    std::atomic<uint64_t>                    m_foreignAcquireCount{0};
-    std::atomic<uint64_t>                    m_localAcquireCount{0};
-    // See GetContentProbe(). NOT owned here: the ext layer creates it and
-    // injects it, because arming and reporting must work on a null-backend
-    // session that has no encoder object at all. This class supplies the one
-    // thing the ext layer cannot -- a command buffer in which the imported
-    // image is readable -- and nothing else.
-    VkSharedBaseObj<VkVideoEncoderContentProbe> m_contentProbe;
-    // Captured in InitEncoder so SetContentProbe() can Configure whenever it
-    // is called. Zero until InitEncoder has run.
-    uint32_t                                 m_contentProbeQueueDepth = 0;
-    void ConfigureContentProbe();
     VkSharedBaseObj<VulkanCommandBufferPool> m_inputCommandBufferPool;
 
     // The ONE queue the staged-input batch runs on, and the queue FAMILY that
@@ -1965,15 +1748,13 @@ protected:
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     DisplayQueue                             m_displayQueue;
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
-    EncoderFrameQueue                        m_encoderThreadQueue;
-    std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
     VkSemaphore                              m_hwLoadBalancingTimelineSemaphore;
     int32_t                                  m_currentVideoQueueIndx;
-    // Completion timeline (ext API currency 3): created by the ext layer at
-    // init, before any submit -- which is what lets the submit path read
-    // the handle without a lock; GPU-signaled at queue flush points with
-    // max(externalFrameId)+1. GPU ordering only -- see the ext header.
+    // Completion timeline: created by the ext layer at init, before any
+    // submit -- which is what lets the submit path read the handle without a
+    // lock; GPU-signaled at queue flush points with max(externalFrameId)+1.
+    // See VulkanVideoEncoderExt::GetCompletionTimelineSemaphore.
     VkSemaphore                              m_completionTimelineSemaphore;
     bool                                     m_completionSemaphoreExportable;
     uint64_t                                 m_maxSubmittedCompletionValue;
@@ -2031,8 +1812,7 @@ public:
     // (m_assemblyFileMutex) STILL HELD, because both capture paths publish
     // from inside their ordering turn. The callback therefore MUST NOT BLOCK
     // and MUST NOT wait on anything an assembly worker could produce -- doing
-    // so stalls every worker and wedges the pipeline. Chromium's callback is a
-    // post-to-sequence trampoline, which satisfies this by construction.
+    // so stalls every worker and wedges the pipeline.
     void SetOnBitstreamCaptured(std::function<void(uint64_t)> callback) {
         std::lock_guard<std::mutex> lock(m_capturedBitstreamsMutex);
         m_onBitstreamCaptured = std::move(callback);

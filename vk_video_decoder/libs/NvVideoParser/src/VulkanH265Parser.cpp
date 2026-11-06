@@ -2598,6 +2598,15 @@ bool VulkanH265Decoder::slice_header(int nal_unit_type, int nuh_temporal_id_plus
         }
     }
 
+    // The fields below are those of an independent slice segment (7.3.6.1, F.7.3.6.1). A dependent
+    // segment's header ends after its address with the fields every segment has, the entry points and
+    // the slice header extension, which the parser does not read: it keeps the header of the segment
+    // before it.
+    if (dependent_slice_segment_flag) {
+        m_slh = *slh;
+        return true;
+    }
+
     if (m_nuh_layer_id > 0 && !vps->privFlags.default_ref_layers_active_flag &&
           vps->numDirectRefLayers[m_nuh_layer_id] > 0) {
         slh->inter_layer_pred_enabled_flag = (uint8_t) u(1);
@@ -2623,7 +2632,12 @@ bool VulkanH265Decoder::slice_header(int nal_unit_type, int nuh_temporal_id_plus
         getNumActiveRefLayerPics(vps, slh);
     }
     if (sps->flags.sample_adaptive_offset_enabled_flag) {
-        u(1 + 1); // slice_sao_luma_flag, slice_sao_chroma_flag
+        u(1); // slice_sao_luma_flag
+        // slice_sao_chroma_flag is present only when ChromaArrayType is not 0: not in a 4:0:0 sequence, nor
+        // in one with separate colour planes (Rec. ITU-T H.265 7.3.6.1).
+        if (!sps->flags.separate_colour_plane_flag && (sps->chroma_format_idc != STD_VIDEO_H265_CHROMA_FORMAT_IDC_MONOCHROME)) {
+            u(1); // slice_sao_chroma_flag
+        }
     }
     if (slh->slice_type == SLICE_TYPE_P || slh->slice_type == SLICE_TYPE_B) {
         if (u(1)) { // num_ref_idx_active_override_flag

@@ -110,8 +110,7 @@ enum class ResultCode : int32_t {
 // trivially copyable, no allocation. SubmitFrame returns one of these per
 // frame, so it must not touch the heap.
 //
-// detail() is a literal, never a formatted message. Anything needing runtime
-// context -- which frame, which format -- belongs on IDiagnostics.
+// detail() is a literal, never a formatted message.
 class Result {
 public:
     Result() : m_code(ResultCode::Ok), m_detail("") { }
@@ -286,7 +285,9 @@ enum class TuningMode : uint32_t {
     Lossless,
 };
 
-// How the library obtains an input image the caller already owns.
+// How the library obtains an input image the caller already owns. OpaqueFd
+// and DmaBuf are imported from ExternalImage::fd; every other value names an
+// image already on the session's device, in ExternalImage::existingImage.
 enum class ExternalHandleType : uint32_t {
     NoHandle = 0,
     OpaqueFd,
@@ -344,12 +345,9 @@ struct FormatRouting {
 // Optional behaviour a caller may need to know about before committing to a
 // configuration. Supports() answers for the device the platform is bound to.
 enum class Feature : uint32_t {
-    DmaBufImport = 0,
-    ExternalSemaphores,
-    IntraRefresh,
+    IntraRefresh = 0,
     HdrMetadata,
     Reconfigure,
-    RegisteredResources,
     BFrames,
 };
 
@@ -481,38 +479,14 @@ struct PlaneLayout {
 
 enum { kMaxPlanes = 4 };
 
-// A registered image or semaphore, named by an opaque value the library
-// chooses. Zero is never a live registration, so a caller may use it as
-// "none" without a companion flag.
-//
-// Opaque rather than an index into anything: a caller that could compute one
-// could also collide with one, and the library is free to change what it
-// stores behind it.
-typedef uint64_t ResourceId;
-const ResourceId kNoResource = 0;
-
-// What happens to an OS handle the caller passes in.
-//
-// This is not a detail. Under Transfer the library closes the handle on
-// EVERY exit path, including a failed registration, so a caller that also
-// closes it double-closes -- and a double close is not a leak, it is a
-// close of whatever unrelated descriptor has since taken the number.
+// Who owns the fd of an fd-backed ExternalImage once SubmitFrame returns.
 enum class HandleOwnership : uint32_t {
-    // The library takes the handle. The caller must not close it, on any
-    // outcome, including a failed registration.
-    //
-    // Who closes it in the end depends on how far the import got, and a
-    // caller can neither observe nor rely on which: once the handle has been
-    // handed to the driver, the driver owns it -- even if the allocation then
-    // fails -- and the library will not close it, because that would be a
-    // second close of a number this process may already have recycled. Short
-    // of that handoff the library closes it. Either way it is not yours.
-    //
-    // The default, because it is what the layer below does and what a
-    // producer handing over a dma-buf almost always wants: one owner.
+    // The library takes the fd. It is closed on every refusal, NotReady
+    // included, and on success it belongs to the imported memory. The caller
+    // never closes it.
     Transfer = 0,
-    // The caller keeps the handle and closes it once registration returns.
-    // The library duplicates whatever it needs.
+    // The fd stays the caller's: the library imports a duplicate and never
+    // closes the caller's fd.
     Borrow,
 };
 
@@ -528,18 +502,50 @@ enum class Residency : uint32_t {
     Foreign,
 };
 
-// An image the caller already owns, described well enough for the library to
-// import it without guessing. Only the fields the handle type needs are read.
+// An image the caller already owns, in one of two forms.
+//
+// AN IMAGE ON THE SESSION'S DEVICE (handleType VkImageHandle, or any type
+// other than OpaqueFd and DmaBuf). SubmitFrame reads existingImage -- a
+// VkImage on the device the session runs on (IDeviceBinding::Device()) --
+// and its format, width, height, tiling and layout. The encoder reads that
+// image directly, or copies it into an image it can encode when the tiling,
+// the extent or the layout calls for that. No OS handle is taken or closed.
+//
+// AN fd-BACKED IMAGE (handleType OpaqueFd or DmaBuf). SubmitFrame imports fd
+// onto the session's device, as an image created exactly as described here,
+// and encodes the frame from it; existingImage is not read. The description
+// is the exporter's own and nothing in it is guessed:
+//   * format, width, height, tiling, usage and createFlags are the
+//     VkImageCreateInfo the exporter used. usage must include TRANSFER_SRC
+//     for a LINEAR image, and TRANSFER_SRC or VIDEO_ENCODE_SRC otherwise.
+//   * A DRM format modifier is stated with hasDrmFormatModifier,
+//     drmFormatModifier, tiling VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT and
+//     one planeLayouts entry (offset, rowPitch) per memory plane of the
+//     modifier; only a DmaBuf carries one.
+//   * allocationSize is the exporter's allocation size; memoryTypeIndex
+//     (OpaqueFd) is the exporter's memory type, and memoryTypeBits narrows
+//     the choice when the index is not known.
+//   * A non-zero deviceUUID, or a valid deviceLUID, must name the session's
+//     device; a non-zero driverUUID must name its driver on OpaqueFd.
+//   * layout is the layout the exporter left the memory in, and residency
+//     says whether the encoder acquires it from VK_QUEUE_FAMILY_FOREIGN_EXT:
+//     Auto reads as Foreign for an fd.
+//   * ownership decides the fd's fate; see HandleOwnership. An ownership
+//     value outside that enumeration is refused with the fd left open.
+// A description the device cannot import is refused with a Result naming
+// what is wrong, and the refusal follows ownership like any other.
+//
+// THE IMPORT IS PER FRAME. Each SubmitFrame imports its own image, which
+// lives exactly as long as the encoder reads it: it is destroyed once the
+// frame's input has been consumed -- the command buffers that read it have
+// completed -- or when the session is released. An exporter reuses its
+// allocation for a later frame once the frame's signal semaphores have
+// signalled, and exports a new fd for every submission under Transfer.
 struct ExternalImage {
     ExternalHandleType handleType = ExternalHandleType::NoHandle;
 
-    // The OS handle, or the Vulkan image when handleType is VkImageHandle.
-    //
-    // WHO OWNS fd IS |ownership|, AND IT DEFAULTS TO Transfer: once passed,
-    // it is not yours to close on any outcome. Set Borrow to keep it -- the
-    // library then works from a private duplicate taken before anything that
-    // can fail. A Win32 handle is never closed by the library under either
-    // rule, and a VkImage is not a handle this rule applies to.
+    // The fd when handleType is OpaqueFd or DmaBuf; the Vulkan image
+    // otherwise.
     int      fd            = -1;
     void*    win32Handle   = nullptr;
     VkImage  existingImage = VK_NULL_HANDLE;
@@ -553,10 +559,7 @@ struct ExternalImage {
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
     ColorModel    colorModel = ColorModel::FromFormat;
 
-    // The usage and flags the image was created with. The library cannot
-    // discover these from a VkImage handle, and it needs them to decide
-    // whether the encoder can read the image directly or must stage it, so
-    // leaving them zero makes an otherwise valid registration fail.
+    // The usage and flags the image was created with.
     VkImageUsageFlags  usage = 0;
     VkImageCreateFlags createFlags = 0;
 
@@ -572,33 +575,11 @@ struct ExternalImage {
     uint32_t memoryTypeBits = 0;          // 0 when the caller does not know
     uint32_t memoryTypeIndex = UINT32_MAX;
 
-    // WHICH DEVICE ALLOCATED THIS, so the library can refuse an image that
-    // belongs to another one. On a multi-GPU host an import that silently
-    // succeeds against the wrong device is worse than a refusal: it fails
-    // later, in the driver, with nothing naming the cause.
-    //
-    // ALL-ZERO MEANS "NOT STATED", and is what a caller that genuinely does
-    // not know passes. The library then skips the check, so leaving these
-    // empty is not the safe default -- it is the unchecked one.
+    // Which device allocated the image. All-zero means "not stated".
     uint8_t deviceUUID[VK_UUID_SIZE] = {};
     uint8_t driverUUID[VK_UUID_SIZE] = {};
     uint8_t deviceLUID[VK_LUID_SIZE] = {};
     bool    deviceLuidValid = false;
-};
-
-// A semaphore the caller owns elsewhere, imported by OS handle. Timeline
-// semaphores only: a binary semaphore cannot express "frame N is done" to a
-// consumer that was not waiting at the moment it was signalled.
-//
-// Who closes the handle is |ownership| below, and it defaults to Transfer.
-struct ExternalSemaphore {
-    ExternalHandleType handleType  = ExternalHandleType::NoHandle;
-    int                fd          = -1;
-    void*              win32Handle = nullptr;
-
-    // As for an image: Transfer means the library closes fd, including on
-    // failure.
-    HandleOwnership ownership = HandleOwnership::Transfer;
 };
 
 // A wait/signal pair the library honours around the encode submission. A
@@ -615,11 +596,7 @@ struct FrameSubmit {
     uint64_t frameId = 0;
     uint64_t pts     = 0;
 
-    // Exactly one of these describes the samples: an image registered earlier
-    // with IResourceRegistry, or an image described inline. A registered image
-    // costs no import here, which is why a compositor recycling buffers
-    // registers them once.
-    ResourceId    registeredImage = kNoResource;
+    // The samples.
     ExternalImage image;
 
     bool    forceIdr    = false;
@@ -630,27 +607,6 @@ struct FrameSubmit {
     ArrayView<SemaphoreWait> waitSemaphores;
     ArrayView<SemaphoreWait> signalSemaphores;
 
-    // ---- fences, for a producer this encoder does not share a queue with ----
-
-    // Wait for this fence before reading the image. A compositor handing over
-    // a buffer it has just rendered into passes the fence that render
-    // signalled; without it the encode may read the frame half-written.
-    //
-    // THE LIBRARY CLOSES THIS FD, on every exit path including a refusal, and
-    // does NOT write -1 back. A caller that re-submits the same frame must
-    // therefore pass a fresh descriptor each time -- in practice a dup, so
-    // that the caller keeps the original and every attempt waits properly.
-    // -1 means no ordering is required.
-    int acquireFenceFd = -1;
-
-    // Receives a fence signalled when the encoder has finished reading the
-    // image, so the caller knows when it may write the buffer again.
-    //
-    // The library writes -1 through this pointer before anything in the
-    // submission can refuse, so the storage never keeps a stale fd from a
-    // previous attempt. The caller owns whatever it receives and closes it.
-    // Null asks for no release fence.
-    int* releaseFenceFd = nullptr;
 };
 
 // An encoded frame. The bitstream points into library storage and stays valid
@@ -706,54 +662,6 @@ struct RateControlCaps {
     // request needs this before it builds a configuration, which is why it is
     // a capability rather than a refusal at session creation.
     uint32_t maxBitrate = 0;
-};
-
-// What the session has done and what it is holding. A caller watching for a
-// stall reads this: a completion counter that does not move while frames are
-// outstanding and output buffers are free is the signature of one.
-//
-// The descriptor API answers this as two chained structures; here it is one
-// value, because a caller that wants the counters always wants the
-// diagnostics alongside them.
-struct CompletionStats {
-    uint64_t completionCounter = 0;   // monotonic; the drain target
-    uint64_t framesTimedOut    = 0;   // deadline drops delivered
-    uint64_t lateCaptures      = 0;   // captures discarded after a timeout drop
-    uint64_t framesCancelled   = 0;
-
-    uint32_t framesPending  = 0;      // submitted, not yet encoded
-    uint32_t framesReady    = 0;      // retrievable now
-    uint32_t framesAcquired = 0;      // delivered, awaiting Release
-
-    // Misuses the library has recorded, and the most recent one. A non-zero
-    // count is a caller bug the library chose to survive rather than refuse.
-    uint64_t diagnosticCount = 0;
-    char     lastDiagnostic[256] = {};
-};
-
-struct RuntimeInfo {
-    char implementationName[64] = {};
-
-    bool isHardwareAccelerated = false;
-    // The encoder can take a frame by handle rather than by copy. A host
-    // decides whether to allocate importable buffers on this.
-    bool supportsNativeHandle = false;
-    // The rate controller is the hardware's, so a host must not second-guess
-    // it by re-driving the bitrate per frame.
-    bool trustedRateController = false;
-    bool supportsSimulcast = false;
-    // Resolution can change without rebuilding the session.
-    bool supportsFrameSizeChange = false;
-    bool reportsAverageQp = false;
-
-    // What the encoder wants the coded extent rounded to. One means no
-    // constraint; a host that ignores these gets a refusal at session
-    // creation rather than a silent crop.
-    uint32_t resolutionAlignmentWidth  = 1;
-    uint32_t resolutionAlignmentHeight = 1;
-    // Whether that alignment applies to every simulcast layer or only the
-    // base one.
-    bool applyAlignmentToAllSimulcastLayers = false;
 };
 
 //=============================================================================
@@ -814,17 +722,6 @@ public:
     virtual bool DeviceUuid(uint8_t outUuid[VK_UUID_SIZE]) const = 0;
 };
 
-// HDR10 static metadata, reachable through Query on a configuration whose
-// codec can carry it. H.264 has no mastering-display or content-light SEI, so
-// Query returns null for an H.264 configuration and the caller learns that
-// without creating a session.
-class IHdrMetadataConfig : public IObject {
-public:
-    static constexpr std::string_view kId = "vk.video.enc.IHdrMetadataConfig/1";
-
-    virtual void SetHdrMetadata(const HdrMetadata& metadata) = 0;
-};
-
 // A configuration under construction. The library owns it, so it can answer
 // questions about itself rather than being an inert record the caller fills
 // and hopes about.
@@ -839,6 +736,12 @@ public:
     virtual IEncoderConfig& SetRateControl(const RateControl& rateControl) = 0;
     virtual IEncoderConfig& SetGop(const GopStructure& gop) = 0;
     virtual IEncoderConfig& SetColourInfo(const ColourInfo& colour) = 0;
+
+    // HDR10 static metadata, written into the parameter sets of an H.265 or
+    // AV1 stream. H.264 defines no mastering-display or content-light SEI, so
+    // Validate refuses an H.264 configuration that sets it rather than
+    // accepting metadata the stream cannot carry.
+    virtual IEncoderConfig& SetHdrMetadata(const HdrMetadata& metadata) = 0;
 
     // Refuse a session whose device lacks the extensions the import paths
     // need, naming the missing one.
@@ -878,6 +781,11 @@ public:
 
     // Submit one frame. Returns once the work is queued, not once it is
     // encoded; the frame is complete when it reaches FrameState::Ready.
+    //
+    // An fd-backed image (ExternalImage) is imported here, and its fd
+    // follows ExternalImage::ownership whatever this returns -- including
+    // NotReady, which under Transfer has consumed the fd: a caller that
+    // retries exports a new one.
     virtual Result SubmitFrame(const FrameSubmit& frame) = 0;
 
     // Drop a submitted frame that has not been encoded yet. A frame already
@@ -907,169 +815,52 @@ public:
     virtual void Release(uint64_t frameId) = 0;
 };
 
-// Learn that frames have completed without polling.
+// The session's completion timeline: a timeline semaphore on the session's
+// device (IDeviceBinding::Device()) that the encode queue signals as frames
+// finish encoding. A caller that already waits on Vulkan -- on the GPU, or on
+// the host with vkWaitSemaphores -- waits on it instead of polling
+// GetFrameState.
 //
-// A caller uses exactly one of these styles. The callback runs on a library
-// thread and must not call back into the session; it exists to wake the
-// caller's own loop.
-class ICompletionSignal : public IObject {
-public:
-    static constexpr std::string_view kId = "vk.video.enc.ICompletionSignal/1";
-
-    typedef void (*CompletionCallback)(uint64_t frameId, void* userData);
-
-    // Invoked exactly once when the encoder is done with a |userData| it was
-    // given -- on replacement, on detach, or at teardown -- and only after any
-    // invocation still running has returned.
-    typedef void (*UserDataRelease)(void* userData);
-
-    // Install, replace, or (with a null callback) clear the completion
-    // callback.
-    //
-    // |release|, when given, hands ownership of |userData| to the encoder.
-    // Prefer it to keeping the cookie alive by arrangement with teardown
-    // order: the encoder knows when the last invocation has returned and the
-    // caller does not.
-    //
-    // Clearing is a quiesce point -- once it returns, no invocation is in
-    // flight -- so a caller that manages the cookie itself may destroy it
-    // immediately afterwards.
-    virtual Result SetCallback(CompletionCallback callback, void* userData,
-                               UserDataRelease release = nullptr) = 0;
-
-    // Monotonic count of frames that have become Ready. A caller that samples
-    // it needs no callback and no handle.
-    virtual uint64_t CompletedCount() const = 0;
-
-    // A semaphore the library signals as frames complete, for a caller that
-    // already waits on Vulkan. Null when the implementation has none.
-    virtual VkSemaphore CompletionSemaphore() const = 0;
-
-    // An OS handle to wait on from a non-Vulkan loop.
-    //
-    // Each call returns a NEW handle and the caller closes that one. The
-    // library keeps its own and closes it at teardown, so closing an exported
-    // handle never disturbs the encoder, and the encoder's teardown never
-    // invalidates a handle a caller still holds.
-    //
-    // Exports share the underlying completion object. They are independent
-    // close obligations, not independent queues: a completion drained through
-    // one export is not redelivered to another. Waking on any of them means
-    // "drain what is available and reconcile against CompletedCount()", which
-    // is the same discipline a single handle needs, because the platforms
-    // differ in what an unread signal accumulates to.
-    //
-    // The handle is close-on-exec where the platform expresses that.
-    virtual Expected<int> ExportCompletionHandle() = 0;
-};
-
-// What a terminal Finish() actually proved.
+// THE VALUE. At the end of each batch of frames the GOP releases for
+// encoding, the semaphore is signalled with
 //
-// Finish() returning an error and the GPU still holding the caller's input are
-// different questions, and a single Result cannot answer both. A producer that
-// lent the encoder an image asks this one before it takes the image back.
-enum class ShutdownDisposition : int32_t {
-    // Every library worker joined, the whole-device wait succeeded and no
-    // device loss was seen. The input may be released -- even when Finish()
-    // reported an earlier encode or file-output failure. Bitstreams already
-    // copied out stay valid until Release().
-    Idle = 0,
-
-    // The workers joined and the device was lost. Pending Vulkan use is
-    // retired, so nothing is still reading -- but shared external contents and
-    // peer image layouts are not valid, which is not the same permission.
-    LostDeviceRetired,
-
-    // Any other terminal wait failure, or a shutdown still underway. Nothing
-    // established that the device stopped using the images, imported
-    // semaphores and registrations involved: keep every one of them, and every
-    // producer-side dependency, alive. Cancelling or abandoning frames does
-    // not change this.
-    Unproven,
-};
-
-// Thread-safe to read at any time; meaningful after Finish() returns.
-struct ShutdownSnapshot {
-    ShutdownDisposition disposition = ShutdownDisposition::Unproven;
-
-    // The FIRST encode or shutdown failure, kept. A clean later step does not
-    // clear it.
-    ResultCode firstError = ResultCode::Ok;
-
-    bool workersJoined    = false;
-    bool callbackDetached = false;
-
-    // Sticky, and separate from the disposition on purpose: a lost device
-    // followed by a wait that returns success is still a lost device.
-    bool deviceLostObserved = false;
-
-    // False while a shutdown is still underway or was left Unproven.
-    bool complete = false;
-};
-
-// Why Finish()'s Result is not enough, and what to do about it.
-class IShutdownDiagnostics : public IObject {
-public:
-    static constexpr std::string_view kId =
-        "vk.video.enc.IShutdownDiagnostics/1";
-
-    virtual ShutdownSnapshot Shutdown() const = 0;
-};
-
-// Register images and semaphores once and refer to them by index afterwards.
+//     max(frameId over every frame submitted so far) + 1
 //
-// This exists because importing a dma-buf costs a Vulkan image creation, and a
-// compositor recycles the same handful of buffers for the life of a stream.
-// Registration moves that cost out of the per-frame path.
-class IResourceRegistry : public IObject {
+// so it never decreases, B-frame reordering included. Reaching
+// CompletionValue(frameId) means the encode of that frame, and of every frame
+// submitted before the signalling batch, has completed on the GPU. A caller
+// whose frame ids increase with submission order waits for frame N by
+// waiting for CompletionValue(N). The + 1 is there because a frame id may be
+// 0 and a timeline semaphore cannot signal its initial value.
+//
+// WHAT IT DOES NOT SAY. The bitstream is read back by a library thread once
+// the GPU is done, so GetFrameState may answer Pending, and Acquire NotReady,
+// for a short time after the value is reached. A frame the GOP still holds
+// back -- a B-frame whose following reference frame has not been submitted --
+// reaches no value until that reference is submitted, the session is
+// drained, or the stream ends.
+//
+// LIFETIME. The session creates the semaphore with itself and destroys it in
+// Finish() and when it is released; Semaphore() answers VK_NULL_HANDLE after
+// Finish(). A caller stops waiting on it before either. A semaphore imported
+// from ExportOpaqueFd() stays valid after that, and is signalled no further.
+// A session that has no timeline does not offer this role.
+class ICompletionTimeline : public IObject {
 public:
-    static constexpr std::string_view kId = "vk.video.enc.IResourceRegistry/1";
+    static constexpr std::string_view kId = "vk.video.enc.ICompletionTimeline/1";
 
-    // Returns the id to put in FrameSubmit::registeredImage.
-    //
-    // |outHandleConsumed|, when given, is WRITTEN ON EVERY RETURN, including
-    // every refusal -- which is the only reason it is an out-parameter rather
-    // than part of the returned value. Under HandleOwnership::Transfer a
-    // refusal still consumes the handle, so a caller that learns this only on
-    // success learns it exactly when it does not matter.
-    //
-    // DIAGNOSTIC ONLY. A false under Transfer is a library defect, and still
-    // not an instruction to close: the caller cannot know how far the import
-    // got, so closing on it risks the double close the ownership rule exists
-    // to prevent. Assert on it; do not act on it.
-    virtual Expected<ResourceId> RegisterImage(
-        const ExternalImage& image,
-        bool*                outHandleConsumed = nullptr) = 0;
-    virtual Result               UnregisterImage(ResourceId id) = 0;
+    // The value that says frame |frameId| has finished encoding.
+    static uint64_t CompletionValue(uint64_t frameId) { return frameId + 1; }
 
-    // Whether this image could be registered, and what it would cost, without
-    // registering it. A caller uses this to choose a buffer format before it
-    // allocates.
-    virtual Expected<InputPath> QueryImageSupport(const ExternalImage& image) = 0;
+    // The timeline semaphore. The session owns it: the caller waits on it
+    // and never signals or destroys it.
+    virtual VkSemaphore Semaphore() const = 0;
 
-    virtual Expected<ResourceId> RegisterSemaphore(const ExternalSemaphore& semaphore) = 0;
-    virtual Result               UnregisterSemaphore(ResourceId id) = 0;
-};
-
-// What the implementation is and what it did. Nothing here changes encoder
-// behaviour; it is for logs and for the runtime-context detail that Result
-// deliberately does not carry.
-class IDiagnostics : public IObject {
-public:
-    static constexpr std::string_view kId = "vk.video.enc.IDiagnostics/1";
-
-    virtual RuntimeInfo GetRuntimeInfo() const = 0;
-
-    // The last error in full, with the context Result omits. Valid until the
-    // next call that returns a failing Result.
-    virtual const char* LastErrorDetail() const = 0;
-
-    virtual uint64_t FramesSubmitted() const = 0;
-    virtual uint64_t FramesEncoded() const = 0;
-
-    // The session's own accounting, which is authoritative where the two
-    // counters above are only this interface's view of it.
-    virtual Expected<CompletionStats> GetCompletionStats() const = 0;
+    // The timeline as a new OPAQUE_FD, for a waiter on another device or in
+    // another process. Each call returns a new fd, which the caller owns: it
+    // closes it, or hands it to exactly one import. UnsupportedFeature when
+    // the device cannot export the semaphore, NotConfigured after Finish().
+    virtual Expected<int> ExportOpaqueFd() = 0;
 };
 
 // An encoding session: a configured encoder with frames in flight.
@@ -1089,8 +880,8 @@ public:
     // settled in the sequence header written once, or in the input routing
     // the session was built around, so changing one needs a new session. Such
     // a change is refused with ResultCode::UnsupportedFeature, the session
-    // keeps running exactly as it was, and IDiagnostics::LastErrorDetail
-    // names the offending field.
+    // keeps running exactly as it was, and the Result's detail names the
+    // offending field.
     //
     // A FIELD LEFT UNSET MEANS "LEAVE IT ALONE", not "set it to zero". The
     // session holds the configuration it was created with and overlays only
@@ -1118,7 +909,7 @@ public:
     //
     // TERMINAL, and named so rather than "flush" because that name invites a
     // caller to treat it as a checkpoint. After this, a submission is refused
-    // with NotConfigured and CompletionSemaphore() answers VK_NULL_HANDLE.
+    // with NotConfigured.
     // Frames already encoded stay acquirable and their bitstream pointers
     // stay valid, so a caller finishes collecting after finishing the stream.
     virtual Result Finish() = 0;
@@ -1131,31 +922,6 @@ public:
 //=============================================================================
 // PLATFORM
 //=============================================================================
-
-// Releasing the process-wide Vulkan instance the encoder stands up.
-//
-// An OWN-mode platform caches its VkInstance for the process lifetime so that
-// repeated create/destroy cycles reuse one instance rather than issuing a
-// second vkCreateInstance -- which a sandboxed process may no longer be
-// permitted to do. Dropping every Ref therefore does NOT destroy the instance,
-// and a process that exits without calling Retire() leaves it standing. Under
-// a driver that audits allocations at exit, that is reported as a leak.
-//
-// Retire() is how a caller that owns the process lifetime releases it at a
-// moment of its choosing: late enough that no encoding remains, early enough
-// that calling the driver is still allowed. It is permanent -- after it, every
-// CreateSession and every VkEncCreatePlatform for this device fails rather
-// than standing a second instance up -- and idempotent.
-//
-// A caller that simply runs to process exit need not call it at all.
-class IPlatformLifetime : public IObject {
-public:
-    static constexpr std::string_view kId = "vk.video.enc.IPlatformLifetime/1";
-
-    // Returns the number of cached device contexts released; zero if the
-    // instance was already retired.
-    virtual uint32_t Retire() = 0;
-};
 
 // The root object: a device the encoder can run on. Everything else is
 // created from here.
@@ -1199,7 +965,9 @@ VkResult VkEncCreatePlatform(const vk::video::enc::PlatformCreateInfo& createInf
 // negotiating with a producer, long before the encoder exists.
 //
 // Returns VK_ERROR_FORMAT_NOT_SUPPORTED, with outRouting->supported false, for
-// a format this library cannot take on any route.
+// a format this library cannot take on any route -- including one that only
+// the compute filter could convert, which IEncoderConfig::Validate refuses
+// for the same reason: a submitted frame is read directly or copied.
 extern "C" VK_ENC_EXPORT
 VkResult VkEncClassifyFormat(VkFormat                     format,
                              vk::video::enc::ColorModel   colorModel,

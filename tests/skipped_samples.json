@@ -134,7 +134,7 @@
         "all"
       ],
       "reproduction": "always",
-      "reason": "TEST ISSUE: exercises the YCBCR2RGBA compute filter, which VulkanFilterYuvCompute.h marks deprecated (vk_filter_test runs it for 2-plane inputs and lists the 3-plane and packed ones as disabled). In the decoder the filter output is created in the decode output format instead of RGBA (GetOutputFormat is not used), the decoded picture's view has no per-plane views while the filter declares plane aspects for its input so no input descriptor is bound (assert descrIndex >= 2), and two debug asserts compare per-plane views the RGBA output does not have. Re-enable once the decoder path is repaired.",
+      "reason": "TEST ISSUE: exercises the YCBCR2RGBA compute filter, which VulkanFilterYuvCompute.h marks deprecated. In the decoder the filter output is created in the decode output format instead of RGBA (GetOutputFormat is not used), so the RGBA output is bound through the combined view of a YCbCr image, which has no storage usage (VUID-VkWriteDescriptorSet-descriptorType-00339 for every frame). The output already has the md5 this cell expects. Re-enable once the decoder creates the filter output in the filter's output format.",
       "bug_url": "",
       "date_added": "2026-09-29",
       "date_updated": "2026-10-29"

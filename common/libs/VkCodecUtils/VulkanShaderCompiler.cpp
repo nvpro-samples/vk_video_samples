@@ -15,7 +15,6 @@
 */
 
 #include "assert.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <iostream>
 #include <mutex>
 #include <atomic>
@@ -25,6 +24,7 @@
 #include "VkCodecUtils/VulkanShaderCompilerBackend.h"
 #include "Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
+#include "Logger.h"
 
 // The compiler backend is shared: both implementations keep process-global
 // state, so one instance is created on first use and torn down with the last
@@ -42,7 +42,7 @@ void* VulkanShaderCompiler::GetSharedCompiler() {
         // First instance - create the shared backend
         g_sharedBackend = VulkanShaderCompilerBackend::Create();
         if (g_sharedBackend == nullptr) {
-            VkEncErr() << "VulkanShaderCompiler: Failed to initialize the shader compiler backend!" << std::endl;
+            LOG_S_ERROR << "VulkanShaderCompiler: Failed to initialize the shader compiler backend!" << std::endl;
             return nullptr;
         }
     }
@@ -105,7 +105,7 @@ VkShaderModule VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, siz
     VkResult result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, &shaderModule);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "Failed to create shader module" << std::endl;
+        LOG_S_ERROR << "Failed to create shader module" << std::endl;
         return VK_NULL_HANDLE;
     }
 

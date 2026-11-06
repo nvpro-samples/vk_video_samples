@@ -21,6 +21,7 @@
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "VkCodecUtils/VulkanVideoProcessor.h"
+#include "Logger.h"
 
 class VulkanVideoDecoderImpl : public VulkanVideoDecoder {
 public:
@@ -146,7 +147,7 @@ public:
     {
 
         if (m_decoderConfig.verbose) {
-            std::cout << "Done processing " << 0UL << " input frames!" << std::endl
+            LOG_S_INFO << "Done processing " << 0UL << " input frames!" << std::endl
                       << std::endl;
         }
 
@@ -201,7 +202,7 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
                                                        m_decoderConfig.inlineSessionParameters != 0);
 
         if (result != VK_SUCCESS) {
-            printf("Could not initialize the Vulkan decoder device!\n");
+            LOG_ERROR("Could not initialize the Vulkan decoder device!\n");
             return result;
         }
 

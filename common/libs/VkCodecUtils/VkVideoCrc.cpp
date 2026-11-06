@@ -15,9 +15,9 @@
 */
 
 #include "VkCodecUtils/VkVideoCrc.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <algorithm>
 #include <cstdio>
+#include "Logger.h"
 
 namespace {
 
@@ -133,7 +133,7 @@ bool VkVideoCrc::BeginCrcCalculation(const std::vector<uint32_t>& crcInitValue,
     if (!crcOutputFileName.empty()) {
         m_file = fopen(crcOutputFileName.c_str(), "w");
         if (m_file == nullptr) {
-            VkEncPrintfErr("\nWarning: Failed to open CRC output file '%s'.\n", crcOutputFileName.c_str());
+            LOG_WARN("Failed to open CRC output file '%s'.\n", crcOutputFileName.c_str());
             m_initValue.clear();
             m_accumulatedCrc.clear();
             m_currentFrameCrc.clear();

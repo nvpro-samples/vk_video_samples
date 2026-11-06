@@ -628,6 +628,37 @@ void convertRGBAtoYUV444(const uint8_t* rgba,
     }
 }
 
+void convertRGBAtoY410(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint8_t>& packed)
+{
+    const uint32_t maxVal = 1023u;
+    packed.resize((size_t)width * height * 4);
+
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            const uint8_t* pixel = rgba + ((size_t)y * width + x) * 4;
+            uint16_t yVal, cbVal, crVal;
+            rgbToYCbCr16((uint16_t)((uint32_t)pixel[0] * maxVal / 255u),
+                         (uint16_t)((uint32_t)pixel[1] * maxVal / 255u),
+                         (uint16_t)((uint32_t)pixel[2] * maxVal / 255u),
+                         10, primaries, range, yVal, cbVal, crVal);
+
+            // rgbToYCbCr16() returns the samples MSB-aligned in 16 bits.
+            const uint32_t word = ((uint32_t)(cbVal >> 6)) |
+                                  ((uint32_t)(yVal >> 6) << 10) |
+                                  ((uint32_t)(crVal >> 6) << 20) |
+                                  (3u << 30);
+            uint8_t* out = &packed[((size_t)y * width + x) * 4];
+            out[0] = (uint8_t)(word & 0xFF);
+            out[1] = (uint8_t)((word >> 8) & 0xFF);
+            out[2] = (uint8_t)((word >> 16) & 0xFF);
+            out[3] = (uint8_t)(word >> 24);
+        }
+    }
+}
+
 // =============================================================================
 // Validation Functions
 // =============================================================================

@@ -35,6 +35,7 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VulkanVideoFrameBuffer.h"
 #include "VkCodecUtils/VkImageResource.h"
+#include "Logger.h"
 
 static VkSharedBaseObj<VkImageResourceView> emptyImageView;
 
@@ -440,7 +441,7 @@ public:
                               m_perFrameDecodeImageSet[picId].m_timestamp});
 
         if (m_debug) {
-            std::cout << "==> Queue Display Picture picIdx: " << (uint32_t)picId
+            LOG_S_INFO << "==> Queue Display Picture picIdx: " << (uint32_t)picId
                       << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
                       << "\ttimestamp " << m_perFrameDecodeImageSet[picId].m_timestamp << std::endl;
         }
@@ -489,7 +490,7 @@ public:
                         m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx,
                                                              m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c],
                                                              &currentValue);
-                        fprintf(stderr, "ERROR: external consumer %u did not release picture %d within %llu ms "
+                        LOG_ERROR("external consumer %u did not release picture %d within %llu ms "
                                 "(waiting for %llu, at %llu, result %d); it is not waited for again\n",
                                 c, (int)picId,
                                 (unsigned long long)(externalConsumerWaitTimeoutNs / (1000ULL * 1000ULL)),
@@ -498,7 +499,7 @@ public:
                     }
                 } else {
 #if 0
-                    fprintf(stderr, " [External consumer %d: value=%llu of sem %llx SKIP]", c,
+                    LOG_INFO(" [External consumer %d: value=%llu of sem %llx SKIP]", c,
                             (unsigned long long)waitValue,
                             (unsigned long long)m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c]);
 #endif
@@ -518,7 +519,7 @@ public:
         m_perFrameDecodeImageSet[picId].filterPoolNode = pReferencedObjectsInfo->filterPoolNode;
 
         if (m_debug) {
-            std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
+            LOG_S_INFO << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
                       << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
                       << std::endl;
         }
@@ -676,7 +677,7 @@ public:
         }
 
         if (m_debug) {
-            std::cout << "<<<<<<<<<<< Dequeue from Display: " << pictureIndex << " out of "
+            LOG_S_INFO << "<<<<<<<<<<< Dequeue from Display: " << pictureIndex << " out of "
                       << numberofPendingFrames << " ===========" << std::endl;
         }
         return numberofPendingFrames;
@@ -877,7 +878,7 @@ public:
             m_perFrameDecodeImageSet[foundPicId].m_picIdx = foundPicId;
 
             if (m_debug) {
-                std::cout << "==> ReservePictureBuffer picIdx: " << (uint32_t)foundPicId << " of " << numAvailablePictures
+                LOG_S_INFO << "==> ReservePictureBuffer picIdx: " << (uint32_t)foundPicId << " of " << numAvailablePictures
                           << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[foundPicId].m_decodeOrder << "\tdecodeOrder: "
                           << m_perFrameDecodeImageSet[foundPicId].m_decodeOrder
                           << "\ttimestamp " << m_perFrameDecodeImageSet[foundPicId].m_timestamp << std::endl;
@@ -943,7 +944,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
     VkResult result = VK_SUCCESS;
 
     if (false) {
-        std::cout << "Create FB Image: " << (int)pImageSpec->imageTypeIdx << " : " << imageIndex
+        LOG_S_INFO << "Create FB Image: " << (int)pImageSpec->imageTypeIdx << " : " << imageIndex
                                                                << ", extent: " << pImageSpec->createInfo.extent.width << " x "
                                                                << pImageSpec->createInfo.extent.height << ", format "
                                                                << pImageSpec->createInfo.format
@@ -1162,7 +1163,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
         if (reconfigureImages || updateFrameBufferGeometry) {
 
             if (false) {
-                std::cout << "Reconfigure FB: " << (int)imageTypeIdx << ", extent: " << m_imageSpecs[imageTypeIdx].createInfo.extent.width << " x "
+                LOG_S_INFO << "Reconfigure FB: " << (int)imageTypeIdx << ", extent: " << m_imageSpecs[imageTypeIdx].createInfo.extent.width << " x "
                                                                        << m_imageSpecs[imageTypeIdx].createInfo.extent.height << " to "
                                                                        << imageSpecs[imageTypeIdx].createInfo.extent.width << " x "
                                                                        << imageSpecs[imageTypeIdx].createInfo.extent.height

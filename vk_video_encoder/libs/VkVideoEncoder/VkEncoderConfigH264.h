@@ -67,6 +67,7 @@ struct EncoderConfigH264 : public EncoderConfig {
         , numRefL0(0)
         , numRefL1(0)
         , numRefFrames(0)
+        , maxNumRefFramesOption(0)
         , entropyCodingMode(ENTROPY_CODING_MODE_CABAC)
         , adaptiveTransformMode(ADAPTIVE_TRANSFORM_ENABLE)
         , spsId(0)
@@ -129,6 +130,7 @@ struct EncoderConfigH264 : public EncoderConfig {
     uint8_t                                    numRefL0;
     uint8_t                                    numRefL1;
     uint8_t                                    numRefFrames;
+    uint8_t                                    maxNumRefFramesOption; // --maxNumRefFrames, 0 when not given
     EntropyCodingMode                          entropyCodingMode;     // Specifies the entropy coding mode. Check support for CABAC mode!
     AdaptiveTransformMode                      adaptiveTransformMode; // Specifies the AdaptiveTransform Mode.
     uint8_t                                    spsId;                 // Specifies the SPS id of the sequence header

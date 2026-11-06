@@ -148,7 +148,10 @@ public:
         }
 
         assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, filterCompleteFence));
-        VkResult result = m_vkDevCtx->QueueSubmit2KHR(m_queue, 1, &submitInfo, filterCompleteFence);
+        // The device context's lock of this VkQueue, which its MultiThreadedQueueSubmit() takes
+        // for the same queue under any role.
+        VulkanDeviceContext::MtQueueMutex queue(m_vkDevCtx, m_queue);
+        VkResult result = m_vkDevCtx->QueueSubmit2KHR(queue, 1, &submitInfo, filterCompleteFence);
 
         return result;
     }
@@ -219,7 +222,10 @@ public:
         }
 
         assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, filterCompleteFence));
-        VkResult result = m_vkDevCtx->QueueSubmit2KHR(m_queue, 1, &submitInfo, filterCompleteFence);
+        // The device context's lock of this VkQueue, which its MultiThreadedQueueSubmit() takes
+        // for the same queue under any role.
+        VulkanDeviceContext::MtQueueMutex queue(m_vkDevCtx, m_queue);
+        VkResult result = m_vkDevCtx->QueueSubmit2KHR(queue, 1, &submitInfo, filterCompleteFence);
 
         return result;
     }

@@ -15,12 +15,12 @@
 */
 
 #include <atomic>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkImageResource.h"
+#include "Logger.h"
 
 VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
                 const VkImageCreateInfo* pImageCreateInfo,
@@ -337,7 +337,7 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
     do {
         result = vkDevCtx->CreateImage(device, &modifiedImageInfo, nullptr, &image);
         if (result != VK_SUCCESS) {
-            VkEncErr() << "[VkImageResource] CreateImage FAILED: result=" << result
+            LOG_S_ERROR << "[VkImageResource] CreateImage FAILED: result=" << result
                       << " format=" << modifiedImageInfo.format
                       << " extent=" << modifiedImageInfo.extent.width << "x" << modifiedImageInfo.extent.height
                       << " tiling=" << modifiedImageInfo.tiling
@@ -363,7 +363,7 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
                     actualDrmModifier = modProps.drmFormatModifier;
                     // Warn if the driver returns DRM_FORMAT_MOD_INVALID — indicates a driver bug
                     if (actualDrmModifier == ((1ULL << 56) - 1)) {
-                        VkEncErr() << "[VkImageResource] WARNING: vkGetImageDrmFormatModifierPropertiesEXT "
+                        LOG_S_WARN << "[VkImageResource] vkGetImageDrmFormatModifierPropertiesEXT "
                                   << "returned DRM_FORMAT_MOD_INVALID — using requested modifier 0x"
                                   << std::hex << drmFormatModifier << std::dec << std::endl;
                         actualDrmModifier = drmFormatModifier;
@@ -854,6 +854,24 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         if (numPlanes == 0) {
             numPlanes = 1;
         }
+
+        // The compute filter binds an image's planes through GetPlaneImageView() and declares
+        // every plane binding image2DArray, which the bound view's type must match
+        // (VUID-vkCmdDispatch-viewType-07752). A multi-planar image's plane views are 2D_ARRAY
+        // views (above); a single-layer single-plane storage image, whose combined view is
+        // VK_IMAGE_VIEW_TYPE_2D, gets a 2D_ARRAY view of its one layer as its plane view.
+        if ((numViews == 1) && (imageViews[0] != VK_NULL_HANDLE) && (viewInfo.viewType == VK_IMAGE_VIEW_TYPE_2D) &&
+            ((imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0)) {
+            VkImageViewCreateInfo planeViewInfo = viewInfo;
+            planeViewInfo.pNext = nullptr;
+            planeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            VkResult result = vkDevCtx->CreateImageView(device, &planeViewInfo, nullptr, &imageViews[numViews]);
+            if (result != VK_SUCCESS) {
+                vkDevCtx->DestroyImageView(device, imageViews[0], nullptr);
+                return result;
+            }
+            numViews++;
+        }
     }
 
     imageResourceView = std::shared_ptr<VkImageResourceView>(new VkImageResourceView(vkDevCtx, imageResource,
@@ -891,6 +909,14 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     viewInfo.flags = 0;
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(viewInfo.format);
+
+    // A multi-planar format has no storage feature of its own: EXTENDED_USAGE lends the image STORAGE
+    // for its per-plane views, never for the combined view, which samples the whole picture
+    // (VUID-VkImageViewCreateInfo-usage-02275).
+    const VkImageUsageFlags imageUsage = imageResource->GetImageCreateInfo().usage;
+    if ((mpInfo != nullptr) && ((imageUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0)) {
+        combinedViewUsage = ((combinedViewUsage != 0) ? combinedViewUsage : imageUsage) & ~VK_IMAGE_USAGE_STORAGE_BIT;
+    }
 
     // Create combined view with YCbCr conversion for display sampling
     // Chain: viewInfo -> ycbcrConversionInfo -> usageCreateInfo

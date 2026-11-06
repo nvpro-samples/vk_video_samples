@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include "Logger.h"
 
 static VkVideoCodecOperationFlagBitsKHR codecFromString(std::string_view s) {
     if (s == "h264" || s == "264") return VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
@@ -33,11 +34,11 @@ static VkVideoEncodeRateControlModeFlagBitsKHR rcModeFromString(std::string_view
 static bool ParseFile(const char* path, simdjson::padded_string& padded, simdjson::ondemand::parser& parser,
                       simdjson::ondemand::document& doc) {
     if (simdjson::padded_string::load(path).get(padded)) {
-        fprintf(stderr, "EncoderConfig JSON: cannot load file: %s\n", path);
+        LOG_ERROR("EncoderConfig JSON: cannot load file: %s\n", path);
         return false;
     }
     if (parser.iterate(padded).get(doc)) {
-        fprintf(stderr, "EncoderConfig JSON: parse error: %s\n", path);
+        LOG_ERROR("EncoderConfig JSON: parse error: %s\n", path);
         return false;
     }
     return true;
@@ -50,7 +51,7 @@ static VkVideoCodecOperationFlagBitsKHR codecFromValue(simdjson::ondemand::value
     const VkVideoCodecOperationFlagBitsKHR codec =
         (val.get_string().get(s) == simdjson::SUCCESS) ? codecFromString(s) : VK_VIDEO_CODEC_OPERATION_NONE_KHR;
     if (codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) {
-        fprintf(stderr, "EncoderConfig JSON: invalid codec: %s\n", path);
+        LOG_ERROR("EncoderConfig JSON: invalid codec: %s\n", path);
     }
     return codec;
 }
@@ -215,7 +216,7 @@ int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
             std::string_view s;
             if ((val.get_string().get(s) != simdjson::SUCCESS) ||
                 !EncoderConfig::TuningModeFromName(std::string(s), config->tuningMode)) {
-                fprintf(stderr, "EncoderConfig JSON: invalid tuningMode: %s\n", path);
+                LOG_ERROR("EncoderConfig JSON: invalid tuningMode: %s\n", path);
                 return -1;
             }
         } else {
@@ -227,7 +228,7 @@ int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
             while ((*end != '"') && (*end != '\0')) {
                 end++;
             }
-            fprintf(stderr, "EncoderConfig JSON: unknown key \"%.*s\": %s\n", (int)(end - name), name, path);
+            LOG_ERROR("EncoderConfig JSON: unknown key \"%.*s\": %s\n", (int)(end - name), name, path);
             return -1;
         }
     }

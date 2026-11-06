@@ -26,6 +26,7 @@
 #include <future>
 #include <stdexcept>
 #include <iostream>
+#include "Logger.h"
 
 class VkThreadPool
 {
@@ -52,12 +53,12 @@ public:
                     try {
                         task();
                     } catch (const std::exception& e) {
-                        std::cerr << "VkThreadPool task threw: " << e.what()
+                        LOG_S_ERROR << "VkThreadPool task threw: " << e.what()
                                   << std::endl;
                     }
 #else
-                    // Chromium builds with -fno-exceptions: nothing can be
-                    // caught here; an escaping exception is process-fatal.
+                    // Without exceptions nothing can be caught here; an
+                    // escaping exception is process-fatal.
                     task();
 #endif
                 }

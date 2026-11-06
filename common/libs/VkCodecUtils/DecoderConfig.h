@@ -32,6 +32,7 @@
 #include <cstring>
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/Helpers.h"
+#include "Logger.h"
 
 struct DecoderConfig {
 
@@ -99,7 +100,7 @@ struct DecoderConfig {
 
     using ProgramArgs = std::vector<ArgSpec>;
     static bool showHelp(const char ** argv, const ProgramArgs &spec) {
-        std::cout << argv[0] << std::endl;
+        LOG_S_INFO << argv[0] << std::endl;
         for ( auto& flag : spec ) {
             std::stringstream ss;
             if (flag.flag) {
@@ -109,12 +110,12 @@ struct DecoderConfig {
                 ss << flag.short_flag;
             }
             // Print flags column 30 chars wide, left justified
-            std::cout << " " << std::left << std::setw(30) << ss.str();
+            LOG_S_INFO << " " << std::left << std::setw(30) << ss.str();
             // Print help if available, left justified
             if (flag.help) {
-                std::cout << flag.help;
+                LOG_S_INFO << flag.help;
             }
-            std::cout << std::endl;
+            LOG_S_INFO << std::endl;
         }
         return true;
     };
@@ -125,6 +126,19 @@ struct DecoderConfig {
                 [this](const char **argv, const ProgramArgs &a) {
                     showHelp(argv, a);
                     help = true;
+                    return true;
+                }},
+            {"--logLevel", "-l", 1, "Set the log level: 0 none, 1 error, 2 warning, 3 info (default), 4 debug",
+                [](const char **args, const ProgramArgs &a) {
+                    char* end = nullptr;
+                    const long level = strtol(args[0], &end, 10);
+                    if ((end == args[0]) || (*end != '\0') ||
+                        (level < static_cast<long>(LogLevel::LOG_NONE)) ||
+                        (level > static_cast<long>(LogLevel::LOG_DEBUG))) {
+                        LOG_S_ERROR << "Invalid log level \"" << args[0] << "\"" << std::endl;
+                        return false;
+                    }
+                    Logger::instance().setLogLevel(static_cast<int>(level));
                     return true;
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
@@ -149,7 +163,7 @@ struct DecoderConfig {
                         forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;
                         return true;
                     } else {
-                        std::cerr << "Invalid codec \"" << args[0] << "\"" << std::endl;
+                        LOG_S_ERROR << "Invalid codec \"" << args[0] << "\"" << std::endl;
                         return false;
                     }
                 }},
@@ -175,7 +189,7 @@ struct DecoderConfig {
                 [this](const char **args, const ProgramArgs &a) {
                     const int bitDepth = std::atoi(args[0]);
                     if ((bitDepth != 8) && (bitDepth != 10) && (bitDepth != 12)) {
-                        fprintf(stderr, "Invalid --initialBitdepth %d: must be 8, 10 or 12\n", bitDepth);
+                        LOG_ERROR("Invalid --initialBitdepth %d: must be 8, 10 or 12\n", bitDepth);
                         return false;
                     }
                     initialBitdepth = bitDepth;
@@ -188,7 +202,7 @@ struct DecoderConfig {
                 [this](const char **args, const ProgramArgs &a) {
                     const int chroma = std::atoi(args[0]);
                     if ((chroma != 400) && (chroma != 420) && (chroma != 422) && (chroma != 444)) {
-                        fprintf(stderr, "Invalid --initialChroma %d: must be 400, 420, 422 or 444\n", chroma);
+                        LOG_ERROR("Invalid --initialChroma %d: must be 400, 420, 422 or 444\n", chroma);
                         return false;
                     }
                     initialChroma = chroma;
@@ -333,7 +347,7 @@ struct DecoderConfig {
                 [this](const char **args, const ProgramArgs &a) {
                     loopCount = std::atoi(args[0]);
                     if (loopCount < 0) {
-                        std::cerr << "Loop count must not be negative" << std::endl;
+                        LOG_S_ERROR << "Loop count must not be negative" << std::endl;
                         return false;
                     }
                     return true;
@@ -347,9 +361,9 @@ struct DecoderConfig {
             {"--queueid", nullptr, 1, "Index of the decoder queue to be used",
                 [this](const char **args, const ProgramArgs &a) {
                     queueId = std::atoi(args[0]);
-                    std::cout << queueId << std::endl;
+                    LOG_S_INFO << queueId << std::endl;
                     if (queueId < 0) {
-                        std::cerr << "queueid must not be negative" << std::endl;
+                        LOG_S_ERROR << "queueid must not be negative" << std::endl;
                         return false;
                     }
                     return true;
@@ -359,7 +373,7 @@ struct DecoderConfig {
                     char* end = nullptr;
                     unsigned long val = strtoul(args[0], &end, 16);
                     if (end == args[0] || *end != '\0') {
-                        std::cerr << "Invalid deviceID hex value: " << args[0] << std::endl;
+                        LOG_S_ERROR << "Invalid deviceID hex value: " << args[0] << std::endl;
                         return false;
                     }
                     deviceId = static_cast<int32_t>(val);
@@ -369,10 +383,10 @@ struct DecoderConfig {
                 [this](const char **args, const ProgramArgs &a) {
                     size_t size = deviceUUID.StringToUUID(args[0]);
                     if (size != VK_UUID_SIZE) {
-                        std::cerr << "Invalid deviceUuid format used: " << args[0]
+                        LOG_S_ERROR << "Invalid deviceUuid format used: " << args[0]
                                   << " with size: " << strlen(args[0])
                                   << std::endl;
-                        std::cerr << "deviceUuid must be represented by 16 hex (32 bytes) values."
+                        LOG_S_ERROR << "deviceUuid must be represented by 16 hex (32 bytes) values."
                                   << std::endl;
                         return false;
                     }
@@ -430,7 +444,7 @@ struct DecoderConfig {
                         char* tend = nullptr;
                         unsigned long initValue = strtoul(token.c_str(), &tend, 16);
                         if (tend == token.c_str() || *tend != '\0') {
-                            std::cerr << "Failed to parse the following initial CRC value:"
+                            LOG_S_ERROR << "Failed to parse the following initial CRC value:"
                                   << token << std::endl;
                             return false;
                         }
@@ -475,21 +489,21 @@ struct DecoderConfig {
                 (a.short_flag != nullptr && strcmp(argv[i], a.short_flag) == 0);
             });
             if (flag == spec.end()) {
-                std::cerr << "Unknown argument \"" << argv[i] << "\"" << std::endl;
-                std::cout << std::endl;
+                LOG_S_ERROR << "Unknown argument \"" << argv[i] << "\"" << std::endl;
+                LOG_S_INFO << std::endl;
                 showHelp(argv, spec);
                 return false;
             }
 
             if (i + flag->numArgs >= argc) {
-                std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
+                LOG_S_ERROR << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
                 return false;
             }
 
             bool disableValueCheck = false;
             if (i + 1 < argc && strcmp(argv[i + 1], "--") == 0) {
                 if (i + 1 + flag->numArgs >= argc) {
-                    std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
+                    LOG_S_ERROR << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
                     return false;
                 }
                 disableValueCheck = true;
@@ -501,10 +515,10 @@ struct DecoderConfig {
             if (!disableValueCheck) {
                 for (int j = 1; j <= flag->numArgs; j++) {
                     if (argv[i + j][0] == '-') {
-                        std::cerr << "Invalid value \"" << argv[i + j] << "\" for \"" << argv[i] << "\" "
+                        LOG_S_ERROR << "Invalid value \"" << argv[i + j] << "\" for \"" << argv[i] << "\" "
                             "(we don't allow values starting with `-` by default). You probably missed to "
                             "set a value for \"" << argv[i] << "\"." << std::endl;
-                        std::cerr << "Use \"-- " << argv[i + j] << "\" if you meant to set \"" << argv[i + j]
+                        LOG_S_ERROR << "Use \"-- " << argv[i + j] << "\" if you meant to set \"" << argv[i + j]
                             << "\" for \"" << argv[i] << "\"." << std::endl;
                         return false;
                     }
@@ -523,7 +537,7 @@ struct DecoderConfig {
         if (((outputcrcPerFrame != 0) || (outputcrc != 0))) {
             if (crcInitValue.empty() != false) {
                 if (outputFileName.empty() != false) {
-                    std::cerr << "Please specify -o if you intend to use CRC calculation, CRC calculation requires HOST accessible memory."
+                    LOG_S_ERROR << "Please specify -o if you intend to use CRC calculation, CRC calculation requires HOST accessible memory."
                                 "Host accessible linear images requires an extra copy at the moment."
                                 << std::endl;
 

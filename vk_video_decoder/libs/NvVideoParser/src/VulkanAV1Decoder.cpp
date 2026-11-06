@@ -309,48 +309,18 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
         m_pClient->AllocPictureBuffer(&m_pCurrPic);
     }
 
-    // PUBLISH THIS PICTURE'S DIMENSIONS FOR LATER FRAMES THAT REFERENCE IT.
+    // This picture's size, which the frames that reference it take: frame_size_with_refs() reads
+    // a reference's (RefUpscaledWidth, RefFrameHeight), and the parser adapter gives each reference
+    // picture resource the coded extent decodeSuperResWidth x decodeHeight, the size the picture is
+    // stored at. decodeWidth is FrameWidth, the width before superres upscaling.
     //
-    // AV1 frame_size_with_refs() has the current frame INHERIT its size from a
-    // reference: UpscaledWidth = RefUpscaledWidth[i], FrameHeight =
-    // RefFrameHeight[i]. SetupFrameSizeWithRefs() duly reads them back out of
-    // the referenced VkPicIf -- and until now NOTHING ANYWHERE WROTE THEM ON
-    // THE AV1 PATH. decodeSuperResWidth had 0 writers among its 2 occurrences
-    // in the tree, and `git log -S` finds no commit that ever added one: the
-    // field has been read-only since it was introduced. decodeWidth and
-    // decodeHeight had exactly one writer each and both are in the VP9 parser,
-    // so on a pure-AV1 stream all three were read while indeterminate --
-    // vkPicBuffBase's constructor does not name its VkPicIf base, so they are
-    // not even zero.
-    //
-    // The wider exposure is not frame_size_with_refs at all: VulkanVideoParser
-    // builds the Vulkan reference VkVideoPictureResourceInfoKHR::codedExtent
-    // from decodeWidth/decodeHeight for EVERY AV1 reference slot on EVERY
-    // frame that has references, with no frame_size_override_flag gate. The
-    // narrow branch is where the garbage becomes visible; this is where it is
-    // consumed.
-    //
-    // WRITTEN HERE, AND DELIBERATELY NOT IN UpdateFramePointers(). That is the
-    // function that publishes the picture into the reference slots and looks
-    // like the natural home, but it is ALSO called on the show_existing_frame
-    // + reset_decoder_state path with a PREVIOUSLY DECODED picture, while the
-    // decoder's frame_width/frame_height/upscaled_width members still hold the
-    // last real frame's values. Writing there would overwrite a correct stored
-    // dimension with an unrelated one every time a show_existing_frame
-    // refreshes the slots -- turning a read-of-garbage bug into a
-    // corrupt-good-data bug. BeginPicture is reached from end_of_picture only
-    // after the whole frame header is parsed, so all three values are final.
-    //
-    // OUTSIDE the allocation guard above, not inside it. The VP9 writer this
-    // mirrors sits inside its own `if (m_pCurrPic == nullptr)`, so a retained
-    // picture keeps a stale size; that flaw is not worth copying.
-    //
-    // decodeWidth carries frame_width (the POST-superres, coded width) rather
-    // than upscaled_width, because that is what the reference codedExtent
-    // needs -- Vulkan wants the decoded extent, not the display extent.
+    // Set here, once the whole frame header is parsed, and for a picture kept from an earlier call
+    // as for a new one. UpdateFramePointers() is the wrong place: a shown existing frame with
+    // reset_decoder_state reaches it with a picture decoded earlier, while these members hold the
+    // last decoded frame's size.
     if (m_pCurrPic != nullptr) {
         m_pCurrPic->decodeSuperResWidth = upscaled_width;  // RefUpscaledWidth
-        m_pCurrPic->decodeWidth         = frame_width;     // coded, post-superres
+        m_pCurrPic->decodeWidth         = frame_width;     // FrameWidth, before superres upscaling
         m_pCurrPic->decodeHeight        = frame_height;    // RefFrameHeight
     }
 
@@ -1554,13 +1524,20 @@ void VulkanAV1Decoder::DecodeCDEFdata()
     }
 }
 
+// lr_params() (AV1 5.9.20). A frame that does not code it, all lossless, with intra block copy, or of a
+// sequence without loop restoration, restores no plane.
 void VulkanAV1Decoder::DecodeLoopRestorationData()
 {
     av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo* pStd = &m_PicData.std_info;
 	StdVideoAV1LoopRestoration* pLoopRestoration = &m_PicData.loopRestoration;
 
-    if (pStd->flags.allow_intrabc) {
+    for (uint32_t pl = 0; pl < STD_VIDEO_AV1_MAX_NUM_PLANES; pl++) {
+        pLoopRestoration->FrameRestorationType[pl] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
+    }
+    pStd->flags.UsesLr = 0;
+    pStd->flags.usesChromaLr = 0;
+    if (all_lossless || pStd->flags.allow_intrabc || !sps->flags.enable_restoration) {
         return;
     }
 
@@ -1580,13 +1557,9 @@ void VulkanAV1Decoder::DecodeLoopRestorationData()
         }
     }
     pStd->flags.UsesLr = use_lr;
+    pStd->flags.usesChromaLr = use_chroma_lr;
     if (use_lr)  {
         int lr_unit_shift = 0;
-        int sb_size = sps->flags.use_128x128_superblock == 1 /*BLOCK_128X128*/ ? 2 : 1; //128 : 64;
-
-        for (int pl = 0; pl < n_planes; pl++) {
-            pLoopRestoration->LoopRestorationSize[pl] = sb_size;  // 64 or 128
-        }
         if (sps->flags.use_128x128_superblock == 1) {
             lr_unit_shift = 1 + u(1);
         } else {
@@ -1595,25 +1568,20 @@ void VulkanAV1Decoder::DecodeLoopRestorationData()
                 lr_unit_shift += u(1);
             }
         }
+        uint8_t lr_uv_shift = 0;
+        if (use_chroma_lr && sps->color_config.subsampling_x && sps->color_config.subsampling_y) {
+            lr_uv_shift = u(1);
+        }
+        // Vulkan takes LoopRestorationSize[plane] as log2 of the unit size in samples minus 5 (AV1
+        // 5.9.20): the luma unit of 64, 128 or 256 samples is 1, 2 or 3, and both chroma units are
+        // lr_uv_shift less.
         pLoopRestoration->LoopRestorationSize[0] = 1 + lr_unit_shift;
+        pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0] - lr_uv_shift;
+        pLoopRestoration->LoopRestorationSize[2] = pLoopRestoration->LoopRestorationSize[1];
     } else {
-        for (int pl = 0; pl < n_planes; pl++)
+        for (uint32_t pl = 0; pl < STD_VIDEO_AV1_MAX_NUM_PLANES; pl++)
             pLoopRestoration->LoopRestorationSize[pl] = 3;
     }
-    uint8_t lr_uv_shift = 0;
-
-    if (!sps->color_config.flags.mono_chrome) {
-        if (use_chroma_lr && (sps->color_config.subsampling_x && sps->color_config.subsampling_y)) {
-            lr_uv_shift = u(1);
-            pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0] - lr_uv_shift;
-            pLoopRestoration->LoopRestorationSize[2] = pLoopRestoration->LoopRestorationSize[1];
-        } else {
-            pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0];
-            pLoopRestoration->LoopRestorationSize[2] = pLoopRestoration->LoopRestorationSize[0];
-        }
-    }
-    pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0] >> lr_uv_shift;
-    pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[1] >> lr_uv_shift;
 }
 
 int VulkanAV1Decoder::GetRelativeDist1(int a, int b)
@@ -2299,19 +2267,12 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         //cm->cdef_strengths[0] = 0;
         //cm->cdef_uv_strengths[0] = 0;
     }
-    if (all_lossless || !sps->flags.enable_restoration) {
-        m_PicData.loopRestoration.FrameRestorationType[0] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
-        m_PicData.loopRestoration.FrameRestorationType[1] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
-        m_PicData.loopRestoration.FrameRestorationType[2] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
-    }
     DecodeLoopFilterdata();
 
     if (!coded_lossless && sps->flags.enable_cdef && !pic_flags->allow_intrabc) {
         DecodeCDEFdata();
     }
-    if (!all_lossless && sps->flags.enable_restoration && !pic_flags->allow_intrabc) {
-        DecodeLoopRestorationData();
-    }
+    DecodeLoopRestorationData();
 
     pStd->TxMode = coded_lossless ? STD_VIDEO_AV1_TX_MODE_ONLY_4X4 : (u(1) ? STD_VIDEO_AV1_TX_MODE_SELECT : STD_VIDEO_AV1_TX_MODE_LARGEST);
     if (!IsFrameIntra()) {

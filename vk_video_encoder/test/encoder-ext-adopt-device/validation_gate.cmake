@@ -67,13 +67,12 @@ if(NOT DEFINED ALLOW_VUIDS OR ALLOW_VUIDS STREQUAL "")
   # An earlier version allowlisted on the name and would have passed a run whose
   # only message was "...which is not allowed here".
   #
-  # SCOPE, measured, because it is easy to overstate: with the Chrome-bundled
-  # layer there are ZERO skew messages on all seven arms. With the Vulkan SDK
-  # layer they appear on six, but are the SOLE cause of redness on exactly ONE
-  # (--context-conflict); the others are red from the genuine defect anyway. So
-  # this allowlist keeps one arm honest, not six. "Older layer" is not the
-  # explanation either -- both manifests declare api_version 1.4.304, and it is
-  # the SDK build that reports skew while the newer Chrome-bundled one does not.
+  # SCOPE, measured, because it is easy to overstate: whether skew messages
+  # appear at all depends on the layer build, not on its declared api_version.
+  # With the Vulkan SDK layer they appear on six arms, but are the SOLE cause
+  # of redness on exactly ONE (--context-conflict); the others are red from
+  # the genuine defect anyway. So this allowlist keeps one arm honest, not
+  # six.
   set(ALLOW_VUIDS "unknown VkStructureType")
 endif()
 

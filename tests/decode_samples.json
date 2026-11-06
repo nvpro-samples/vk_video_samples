@@ -126,6 +126,20 @@
       "source_filepath": "video/avc/clip-a.h264"
     },
     {
+      "name": "h264_clip_a_filter_ycbcrcopy",
+      "codec": "h264",
+      "description": "Test H.264 decoding with the YCbCr copy post-process filter (--enablePostProcessFilter 0): the filter reads each decoded picture through its per-plane storage views and writes the output, which must equal the decode without the filter",
+      "extra_args": [
+        "--enablePostProcessFilter",
+        "0"
+      ],
+      "expected_output_md5": "9a629a99a9870197022265fcb1fc4bb2",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264",
+      "expected_output_y4m_md5": "2bcb11929bbacd1d0ba1c088e66ff7da"
+    },
+    {
       "name": "h264_clip_a_filter_ycbcr2rgba",
       "codec": "h264",
       "description": "Test H.264 decoding with YCBCR2RGBA post-process filter",
@@ -209,6 +223,20 @@
       "name": "av1_basic_10bit",
       "codec": "av1",
       "description": "Test AV1 decoding with 10-bit basic sample",
+      "expected_output_md5": "dd08821f4ce410191d907513c49dde3d",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-basic-10.ivf",
+      "source_checksum": "1c6bcfdeddd173ddb25074d2433e8cb84628692fb64a2d09d69e394b2b618ce2",
+      "source_filepath": "video/av1/av1-176x144-main-basic-10.ivf",
+      "expected_output_y4m_md5": "5f7b1ef81161e8b5b9b4cbf535276d06"
+    },
+    {
+      "name": "av1_basic_10bit_filter_ycbcrcopy",
+      "codec": "av1",
+      "description": "Test 10-bit AV1 decoding with the YCbCr copy post-process filter (--enablePostProcessFilter 0): the output must equal the decode without the filter",
+      "extra_args": [
+        "--enablePostProcessFilter",
+        "0"
+      ],
       "expected_output_md5": "dd08821f4ce410191d907513c49dde3d",
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-basic-10.ivf",
       "source_checksum": "1c6bcfdeddd173ddb25074d2433e8cb84628692fb64a2d09d69e394b2b618ce2",

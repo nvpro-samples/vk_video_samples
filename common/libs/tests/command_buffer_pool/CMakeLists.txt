@@ -21,7 +21,6 @@ set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 add_executable(${PROJECT_NAME}
     src/main.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
-    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanCommandBufferPool.cpp
     ${VKCODECUTILS_DIR}/VulkanCommandBuffersSet.cpp
     ${VKCODECUTILS_DIR}/VulkanSemaphoreSet.cpp

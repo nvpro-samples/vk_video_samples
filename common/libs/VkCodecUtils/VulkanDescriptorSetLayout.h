@@ -220,6 +220,7 @@ public:
      , m_descriptorLayoutSize(0)
      , m_descriptorBufferSize(0)
      , m_descriptorBufferProperties()
+     , m_combinedImageSamplerDescriptorCount(1)
     { }
 
     ~VulkanDescriptorSetLayout()
@@ -298,6 +299,9 @@ public:
         assert(imageDescriptorBufPtr);
         imageDescriptorBufPtr += bufferIdxOffset;
 
+        // With robustBufferAccess enabled, a buffer descriptor has its robust size.
+        const bool robustBufferAccess = m_vkDevCtx->IsRobustBufferAccessEnabled();
+
         for (uint32_t i = 0; i < descriptorWriteCount; i++) {
             const VkWriteDescriptorSet* pDescriptorWrite = &pDescriptorWrites[i];
 
@@ -306,36 +310,69 @@ public:
                                                                pDescriptorWrite->dstBinding,
                                                                &dstBindingOffset);
 
-            VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
-            descriptorInfo.type = pDescriptorWrite->descriptorType;
-            size_t descriptorSize = 0;
-            switch (pDescriptorWrite->descriptorType) {
-            case VK_DESCRIPTOR_TYPE_SAMPLER:
-                descriptorSize = m_descriptorBufferProperties.samplerDescriptorSize;
-                descriptorInfo.data.pSampler = &pDescriptorWrite->pImageInfo->sampler;
-                break;
-            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-                descriptorSize = m_descriptorBufferProperties.combinedImageSamplerDescriptorSize;
-                descriptorInfo.data.pCombinedImageSampler = pDescriptorWrite->pImageInfo;
-                break;
-            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-                descriptorSize = m_descriptorBufferProperties.sampledImageDescriptorSize;
-                descriptorInfo.data.pSampledImage = pDescriptorWrite->pImageInfo;
-                break;
-            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-                descriptorSize = m_descriptorBufferProperties.storageImageDescriptorSize;
-                descriptorInfo.data.pStorageImage = pDescriptorWrite->pImageInfo;
-                break;
-            default:
-                assert(!"Unknown descriptor type");
-                continue;
+            // The elements of an array binding follow one another, one descriptor each.
+            for (uint32_t element = 0; element < pDescriptorWrite->descriptorCount; element++) {
+                VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+                descriptorInfo.type = pDescriptorWrite->descriptorType;
+                // A uniform or storage buffer descriptor names its range by device address.
+                VkDescriptorAddressInfoEXT addressInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT };
+                size_t descriptorSize = 0;
+                switch (pDescriptorWrite->descriptorType) {
+                case VK_DESCRIPTOR_TYPE_SAMPLER:
+                    descriptorSize = m_descriptorBufferProperties.samplerDescriptorSize;
+                    descriptorInfo.data.pSampler = &pDescriptorWrite->pImageInfo[element].sampler;
+                    break;
+                case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+                    descriptorSize = m_descriptorBufferProperties.combinedImageSamplerDescriptorSize *
+                                     m_combinedImageSamplerDescriptorCount;
+                    descriptorInfo.data.pCombinedImageSampler = &pDescriptorWrite->pImageInfo[element];
+                    break;
+                case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+                    descriptorSize = m_descriptorBufferProperties.sampledImageDescriptorSize;
+                    descriptorInfo.data.pSampledImage = &pDescriptorWrite->pImageInfo[element];
+                    break;
+                case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+                    descriptorSize = m_descriptorBufferProperties.storageImageDescriptorSize;
+                    descriptorInfo.data.pStorageImage = &pDescriptorWrite->pImageInfo[element];
+                    break;
+                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+                case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+                {
+                    const VkDescriptorBufferInfo& bufferInfo = pDescriptorWrite->pBufferInfo[element];
+                    // An address takes an explicit range (VUID-VkDescriptorAddressInfoEXT-nullDescriptor-08939).
+                    assert(bufferInfo.range != VK_WHOLE_SIZE);
+                    VkBufferDeviceAddressInfo bufferAddressInfo = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+                    bufferAddressInfo.buffer = bufferInfo.buffer;
+                    addressInfo.address = m_vkDevCtx->GetBufferDeviceAddressKHR(*m_vkDevCtx, &bufferAddressInfo) +
+                                          bufferInfo.offset;
+                    addressInfo.range = bufferInfo.range;
+                    addressInfo.format = VK_FORMAT_UNDEFINED;
+                    if (pDescriptorWrite->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+                        descriptorSize = robustBufferAccess ?
+                                             m_descriptorBufferProperties.robustUniformBufferDescriptorSize :
+                                             m_descriptorBufferProperties.uniformBufferDescriptorSize;
+                        descriptorInfo.data.pUniformBuffer = &addressInfo;
+                    } else {
+                        descriptorSize = robustBufferAccess ?
+                                             m_descriptorBufferProperties.robustStorageBufferDescriptorSize :
+                                             m_descriptorBufferProperties.storageBufferDescriptorSize;
+                        descriptorInfo.data.pStorageBuffer = &addressInfo;
+                    }
+                    break;
+                }
+                default:
+                    assert(!"Unknown descriptor type");
+                    continue;
+                }
+
+                const VkDeviceSize elementOffset =
+                    dstBindingOffset + (pDescriptorWrite->dstArrayElement + element) * descriptorSize;
+                // The binding's last descriptor may end exactly where the layout does.
+                assert((elementOffset + descriptorSize) <= m_descriptorLayoutSize);
+
+                m_vkDevCtx->GetDescriptorEXT(*m_vkDevCtx, &descriptorInfo, descriptorSize,
+                                             imageDescriptorBufPtr + elementOffset);
             }
-
-            // The binding's descriptor may end exactly where the layout does.
-            assert((dstBindingOffset + descriptorSize) <= m_descriptorLayoutSize);
-
-            m_vkDevCtx->GetDescriptorEXT(*m_vkDevCtx, &descriptorInfo, descriptorSize,
-                                         imageDescriptorBufPtr + dstBindingOffset);
         }
         VkBuffer imageDescriptorBuffer = m_resourceDescriptorBuffer->GetBuffer();
         assert(imageDescriptorBuffer);
@@ -382,6 +419,7 @@ private:
     VkDeviceSize                       m_descriptorBufferSize;
     VkPhysicalDeviceDescriptorBufferPropertiesEXT
                                        m_descriptorBufferProperties;
+    uint32_t                           m_combinedImageSamplerDescriptorCount;
     VkSharedBaseObj<VkBufferResource>  m_resourceDescriptorBuffer;
 };
 
