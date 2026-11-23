@@ -714,6 +714,22 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
             (uint32_t)headerBytes;
     }
 
+    // Recompute on every pooled frame, after reserving any prepended headers.
+    // The range must fit the buffer and satisfy the profile's size alignment.
+    const VkDeviceSize dstOffset = encodeFrameInfo->encodeInfo.dstBufferOffset;
+    const VkDeviceSize rangeAlignment = std::max<VkDeviceSize>(
+        m_encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment, 1);
+    if (dstOffset >= size) {
+        assert(!"Encoded headers leave no space in the destination bitstream buffer");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const VkDeviceSize dstRange = ((size - dstOffset) / rangeAlignment) * rangeAlignment;
+    if (dstRange == 0) {
+        assert(!"Destination bitstream buffer has no aligned encode range");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    encodeFrameInfo->encodeInfo.dstBufferRange = dstRange;
+
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
     if (m_aqAnalyzes) {
         // Use the interface directly - no need for casting
